@@ -1,0 +1,51 @@
+semi: false
+singleQuote: true
+jsxSingleQuote: false
+trailingComma: all
+printWidth: 100
+tabWidth: 2
+useTabs: false
+quoteProps: as-needed
+bracketSpacing: true
+bracketSameLine: false
+arrowParens: always
+embeddedLanguageFormatting: auto
+singleAttributePerLine: false
+
+overrides:
+  - files:
+      - "*.json"
+      - "*.jsonc"
+      - "*.webmanifest"
+    options:
+      singleQuote: false
+
+  - files:
+      - "*.yml"
+      - "*.yaml"
+    options:
+      singleQuote: false
+
+  - files:
+      - "*.md"
+      - "*.markdown"
+    options:
+      printWidth: 80
+      proseWrap: preserve
+
+  - files:
+      - "*.vue"
+    options:
+      singleQuote: true
+
+  - files:
+      - "*.ts"
+      - "*.mts"
+      - "*.cts"
+    options:
+      singleQuote: true
+
+  - files:
+      - "*.html"
+    options:
+      singleQuote: false

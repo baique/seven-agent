@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Electron</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: local: file:; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; connect-src * local: ws: wss:; img-src * data: blob: local: file:; style-src * 'self' 'unsafe-inline';"
+    />
+    <script>
+      /**
+       * 拦截 Vite HMR 的 full-reload 消息
+       * 在 Vite 客户端初始化前执行，阻止自动页面刷新
+       */
+      ;(function () {
+        const OriginalWebSocket = window.WebSocket
+        window.WebSocket = function (url, protocols) {
+          const ws = new OriginalWebSocket(url, protocols)
+          ws.addEventListener(
+            "message",
+            function (e) {
+              try {
+                const data = JSON.parse(e.data)
+                if (data.type === "full-reload") {
+                  console.log("[HMR] 检测到完整重载请求，已阻止自动刷新，请手动刷新页面 (Ctrl+R)")
+                  e.stopImmediatePropagation()
+                }
+              } catch {}
+            },
+            true,
+          )
+          return ws
+        }
+        window.WebSocket.prototype = OriginalWebSocket.prototype
+        window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING
+        window.WebSocket.OPEN = OriginalWebSocket.OPEN
+        window.WebSocket.CLOSING = OriginalWebSocket.CLOSING
+        window.WebSocket.CLOSED = OriginalWebSocket.CLOSED
+      })()
+    </script>
+    <script src="/live2dcubismcore.min.js"></script>
+    <style>
+      html,
+      body {
+        background: transparent !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

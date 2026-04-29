@@ -1,0 +1,76 @@
+{
+  "toolReview": {
+    "whitelist": [
+      "get_system_info",
+      "get_current_time",
+      "read_file",
+      "read_line",
+      "list_directory",
+      "get_file_info",
+      "file_exists",
+      "grep",
+      "memory_search",
+      "memory_deep_search",
+      "ext_search",
+      "ext_list",
+      "list_subagents",
+      "read_skill",
+      "get_session_notes",
+      "update_session_notes",
+      "update_mood_values",
+      "update_memory",
+      "create_tasks",
+      "update_task",
+      "list_tasks",
+      "add_note",
+      "open_window",
+      "schedule_reminder",
+      "query_reminders",
+      "delete_reminder",
+      "get_clipboard",
+      "show_notification"
+    ]
+  },
+  "toolTruncation": {
+    "defaultMaxChars": 10240,
+    "defaultMaxLines": 2000,
+    "defaultMode": "head",
+    "strategies": {
+      "read_file": {
+        "maxChars": 10240,
+        "maxLines": 2000,
+        "mode": "structure"
+      },
+      "grep": {
+        "maxChars": 10240,
+        "maxLines": 2000,
+        "mode": "structure"
+      },
+      "terminal": {
+        "maxChars": 10240,
+        "maxLines": 2000,
+        "mode": "tail"
+      },
+      "memory_search": {
+        "maxChars": 5000,
+        "maxLines": 1000,
+        "mode": "head"
+      },
+      "memory_deep_search": {
+        "maxChars": 5000,
+        "maxLines": 1000,
+        "mode": "head"
+      },
+      "edit_file": {
+        "maxChars": 2000,
+        "maxLines": 500,
+        "mode": "head"
+      },
+      "screenshot": {
+        "maxChars": 2000,
+        "maxLines": 500,
+        "mode": "head"
+      }
+    }
+  }
+}
