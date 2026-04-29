@@ -84,7 +84,15 @@ export function registerSocketHandlers(handler: SocketHandler): void {
           name: 'write',
           args: {
             filePath: '/tmp/test_review.txt',
-            content: '这是一个测试审查请求',
+            content: '这是一个测试审查请求，用于验证工具审查对话框在参数较多时的显示效果',
+            encoding: 'utf-8',
+            mode: 'overwrite',
+            createDirs: true,
+            permissions: '644',
+            backup: false,
+            validateContent: true,
+            maxRetries: 3,
+            timeout: 30000,
           },
         })
         logger.info({ result }, '[Handlers] 审查结果')

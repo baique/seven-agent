@@ -247,8 +247,8 @@ body {
 
 .review-panel {
   width: 400px;
-  min-height: 510px;
-  max-height: 600px;
+  height: 580px;
+  max-height: 85vh;
   background:
     linear-gradient(180deg, rgba(0, 180, 220, 0.08) 0%, rgba(0, 150, 200, 0.05) 100%),
     linear-gradient(
@@ -442,8 +442,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1;
-  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .info-row {
@@ -520,7 +519,6 @@ body {
   width: 92%;
   margin: 0 auto 16px;
   min-height: 60px;
-  max-height: 300px;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;

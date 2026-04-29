@@ -355,6 +355,11 @@ export class TaskManager {
       return
     }
 
+    if (task.status === 'done') {
+      logger.warn(`[TaskManager] 添加笔记失败，任务 "${taskId}" 已完成，不允许添加笔记`)
+      return
+    }
+
     if (!task.notes) {
       task.notes = []
     }

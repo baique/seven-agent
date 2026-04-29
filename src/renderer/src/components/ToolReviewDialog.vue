@@ -108,14 +108,18 @@ function handleMouseUp() {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  width: 280px;
+  width: 480px;
   max-width: 90vw;
+  height: 520px;
   max-height: 85vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   pointer-events: auto;
 }
 
 .review-header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -139,13 +143,25 @@ function handleMouseUp() {
 
 .review-content {
   padding: 20px;
-  max-height: 60vh;
-  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
   pointer-events: auto;
 }
 
 .review-item {
+  flex-shrink: 0;
   margin-bottom: 12px;
+}
+
+.review-item:last-child {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
 }
 
 .review-label {
@@ -153,6 +169,7 @@ function handleMouseUp() {
   font-size: 12px;
   color: #666;
   margin-bottom: 4px;
+  flex-shrink: 0;
 }
 
 .review-value {
@@ -175,11 +192,11 @@ function handleMouseUp() {
   background: #f5f5f5;
   border-radius: 6px;
   font-size: 12px;
-  overflow-x: auto;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 40vh;
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 滚动条样式 */
@@ -205,6 +222,7 @@ function handleMouseUp() {
 }
 
 .review-actions {
+  flex-shrink: 0;
   display: flex;
   gap: 12px;
   padding: 16px 20px;

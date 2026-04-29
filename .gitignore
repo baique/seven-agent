@@ -18,3 +18,4 @@ src/tts/voices
 /resources/model/*
 !/resources/model/README.md
 .env
+electron.vite.config.*.mjs

@@ -45,9 +45,10 @@ export const LLMNode: GraphNode<typeof MessagesState.State> = async (state) => {
 
     // 调用 BrainSpeak
     const { message: think, usage } = await BrainSpeak(context, abortController?.signal)
-    logger.info({ response: think }, '[LLM] 思考结果:')
+
     // 设置 LLM 返回的 usage
     CTX.setRawUsage(usage)
+    logger.debug({ response: think, usage }, '[LLM] 思考结果:')
 
     // 检查是否被取消
     const isCancelled = requestId ? cancelManager.isCancelled(requestId) : false
