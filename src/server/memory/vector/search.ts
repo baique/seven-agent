@@ -51,10 +51,19 @@ export class HybridSearcher {
       temporalHalfLifeDays = 30,
     } = params
 
+    console.log('[HybridSearch] 搜索参数:', {
+      query,
+      maxResults,
+      minScore,
+      vectorEnabled: this.vectorEnabled,
+    })
+
     // 1. 向量搜索（如果启用）
     const vectorResults = this.vectorEnabled
       ? await this.searchVector(query, maxResults * 4, sourceTypes, startTime, endTime)
       : []
+
+    console.log('[HybridSearch] 向量搜索结果:', vectorResults.length)
 
     // 2. 全文搜索
     const textResults = await this.searchKeyword(
@@ -65,8 +74,12 @@ export class HybridSearcher {
       endTime,
     )
 
+    console.log('[HybridSearch] 全文搜索结果:', textResults.length)
+
     // 3. 合并结果
     let merged = this.mergeResults(vectorResults, textResults, vectorWeight, textWeight)
+
+    console.log('[HybridSearch] 合并后结果:', merged.length)
 
     // 4. 应用时间衰减
     if (temporalDecayEnabled) {
@@ -81,7 +94,10 @@ export class HybridSearcher {
     }
 
     // 6. 过滤低分结果
-    return merged.filter((r) => r.score >= minScore)
+    const filtered = merged.filter((r) => r.score >= minScore)
+    console.log('[HybridSearch] 过滤后结果:', filtered.length, 'minScore:', minScore)
+
+    return filtered
   }
 
   /**
@@ -101,9 +117,8 @@ export class HybridSearcher {
     const queryVec = await this.embeddingProvider.embed(query)
     const vecBlob = Buffer.from(new Float32Array(queryVec).buffer)
 
-    // sqlite-vec 使用 MATCH ? AND k = ? 语法
-    // 先获取候选结果（使用 KNN 索引）
-    const candidateLimit = limit * 4 // 超采样
+    // sqlite-vec 使用 MATCH ? AND k = ? 语法（不能用 LIMIT）
+    const k = limit * 4 // 超采样
 
     const stmt = this.db.prepare(`
       SELECT c.id, vec_distance_cosine(v.embedding, ?) as dist
@@ -111,17 +126,16 @@ export class HybridSearcher {
       JOIN memories c ON c.id = v.memory_id
       WHERE v.embedding MATCH ? AND k = ?
       ORDER BY dist ASC
-      LIMIT ?
     `)
 
-    const rows = stmt.all(vecBlob, vecBlob, candidateLimit, limit) as Array<{
+    const rows = stmt.all(vecBlob, vecBlob, k) as Array<{
       id: string
       dist: number
       source_type: string
       created_at: number
     }>
 
-    // 应用过滤条件
+    // 应用过滤条件和限制
     let filtered = rows
     if (sourceTypes?.length) {
       filtered = filtered.filter((r) => sourceTypes.includes(r.source_type as MemorySourceType))

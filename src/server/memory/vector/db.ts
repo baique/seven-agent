@@ -96,9 +96,9 @@ export class VectorMemoryDB {
   private vectorDimensions = 768
   private initialized = false
 
-  constructor() {
-    // 数据库存储在工作区目录
-    this.dbPath = path.join(paths.WORKSPACE_ROOT, 'memory.db')
+  constructor(dbPath?: string) {
+    // 数据库存储在工作区目录，或使用指定的路径
+    this.dbPath = dbPath || path.join(paths.WORKSPACE_ROOT, 'memory.db')
   }
 
   /**

@@ -27,11 +27,17 @@ export const extSearchTool = new DynamicStructuredTool({
 - 需要某个功能时，搜索是否有对应的扩展工具
 - 查找特定服务的工具（如搜索"github"找GitHub相关工具）
 
+**搜索语法：**
+- 支持空格分隔的多个关键词
+- 使用 OR 逻辑：匹配任一关键词即返回
+- 同时搜索工具名称和描述
+
 **示例：**
 - ext_search({"query": "github"}) → 返回GitHub相关工具
+- ext_search({"query": "github webhook"}) → 返回包含"github"或"webhook"的工具
 - ext_search({"query": ""}) → 返回所有可用工具（同ext_list）`,
   schema: z.object({
-    query: z.string().describe('搜索关键词，为空则返回所有扩展工具'),
+    query: z.string().describe('搜索关键词，支持空格分隔多个关键词（OR逻辑），为空则返回所有扩展工具'),
   }),
   func: async (input) => {
     const toolName = 'ext_search'
@@ -39,15 +45,24 @@ export const extSearchTool = new DynamicStructuredTool({
 
     try {
       const tools = await mcpToolManager.getToolsMetadata()
-      const queryLower = query.toLowerCase()
 
-      const filtered = query
-        ? tools.filter(
-            (t) =>
-              t.name.toLowerCase().includes(queryLower) ||
-              (t.description || '').toLowerCase().includes(queryLower),
-          )
-        : tools
+      // 解析空格分隔的关键词，支持 OR 逻辑
+      const keywords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((k) => k.length > 0)
+
+      const filtered =
+        keywords.length > 0
+          ? tools.filter((t) => {
+              const nameLower = t.name.toLowerCase()
+              const descLower = (t.description || '').toLowerCase()
+              return keywords.some(
+                (keyword) =>
+                  nameLower.includes(keyword) || descLower.includes(keyword),
+              )
+            })
+          : tools
 
       if (filtered.length === 0) {
         return await ToolResult.success(toolName, {

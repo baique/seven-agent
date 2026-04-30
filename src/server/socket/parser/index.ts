@@ -237,7 +237,7 @@ export class LLMResponseParser {
         // )
 
         // 先用 index 查找是否已存在
-        let existingIndex = record.toolCalls.findIndex((t) => t.index === toolCallIndex)
+        const existingIndex = record.toolCalls.findIndex((t) => t.index === toolCallIndex)
 
         if (existingIndex >= 0) {
           // 更新已有的 toolCall：累积参数字符串
@@ -247,7 +247,7 @@ export class LLMResponseParser {
             // 尝试解析完整的参数
             try {
               existing.args = JSON.parse(existing.argsString)
-              logger.info(
+              logger.debug(
                 { toolCallId: existing.id, args: existing.args, argsString: existing.argsString },
                 '[Parser:RAW] 参数解析成功',
               )
@@ -453,7 +453,7 @@ export class LLMResponseParser {
       this.currentMessages.push(msg)
     }
 
-    let chunkContent = chunkItem.content as string
+    const chunkContent = chunkItem.content as string
     if (chunkContent) {
       this.aiMessageCache[id].content += chunkContent
     }

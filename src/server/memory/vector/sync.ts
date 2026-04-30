@@ -60,7 +60,7 @@ export class MemorySyncManager {
 
   // 异步同步队列
   private pendingSyncs = new Map<string, Promise<void>>()
-  
+
   // 批量同步队列
   private batchQueue = new Map<string, DialogMessageJSON[]>()
   private batchTimer: NodeJS.Timeout | null = null
@@ -141,7 +141,6 @@ export class MemorySyncManager {
       report.duration = Date.now() - startTime
       console.log(`[Sync] 强制同步完成: ${JSON.stringify(report)}`)
       return report
-
     } catch (err) {
       console.error(`[Sync] 强制同步失败: ${err}`)
       throw err
@@ -165,7 +164,7 @@ export class MemorySyncManager {
 
   private scheduleAsyncSync(sourceFile: string): void {
     const syncPromise = this.doAsyncSync(sourceFile)
-      .catch(err => {
+      .catch((err) => {
         console.error(`[Sync] 异步同步失败 ${sourceFile}: ${err}`)
         // 标记失败状态
         this.markSyncFailed(sourceFile, String(err))
@@ -179,7 +178,7 @@ export class MemorySyncManager {
 
   private async doAsyncSync(sourceFile: string): Promise<void> {
     const isMemory = sourceFile.includes('remember')
-    
+
     if (isMemory) {
       await this.syncMemoryFile(sourceFile, { force: false })
     } else {
@@ -202,8 +201,10 @@ export class MemorySyncManager {
     }
 
     // 触发条件：队列满N条 或 超时M秒
-    const totalMessages = Array.from(this.batchQueue.values())
-      .reduce((sum, msgs) => sum + msgs.length, 0)
+    const totalMessages = Array.from(this.batchQueue.values()).reduce(
+      (sum, msgs) => sum + msgs.length,
+      0,
+    )
 
     if (totalMessages >= this.BATCH_SIZE) {
       this.flushBatchQueue()
@@ -245,7 +246,7 @@ export class MemorySyncManager {
    */
   private async syncMemoryFile(
     filePath: string,
-    options: { force?: boolean } = {}
+    options: { force?: boolean } = {},
   ): Promise<{ added: number; updated: number; deleted: number }> {
     const result = { added: 0, updated: 0, deleted: 0 }
 
@@ -276,11 +277,11 @@ export class MemorySyncManager {
       throw err
     }
 
-    const currentIds = new Set(memories.map(m => m.id))
+    const currentIds = new Set(memories.map((m) => m.id))
 
     // 4. 获取SQLite中该文件的现有记录
     const existingRows = this.db.getMemoriesBySourceFile(filePath)
-    const existingIdMap = new Map(existingRows.map(r => [r.sourceId, r]))
+    const existingIdMap = new Map(existingRows.map((r) => [r.sourceId, r]))
 
     // 5. 分类处理
     const toInsert: LongTermMemoryJSON[] = []
@@ -345,7 +346,7 @@ export class MemorySyncManager {
             eventType: memory.eventType,
             tags: memory.tags,
           }),
-          new Date(memory.updatedAt || memory.createdAt).getTime()
+          new Date(memory.updatedAt || memory.createdAt).getTime(),
         )
         if (this.db.isVectorEnabled()) {
           this.db.updateVector(existingId, newEmbedding)
@@ -374,11 +375,14 @@ export class MemorySyncManager {
 
       db.exec('COMMIT')
 
-      console.log(
-        `[Sync] 长期记忆同步完成: ${filePath} (+${result.added} ~${result.updated} -${result.deleted})`
-      )
+      const hasChanges = result.added > 0 || result.updated > 0 || result.deleted > 0
+      if (hasChanges) {
+        const shortPath = path.relative(paths.WORKSPACE_ROOT, filePath)
+        console.log(
+          `[Sync] 长期记忆同步: ${shortPath} (+${result.added} ~${result.updated} -${result.deleted})`,
+        )
+      }
       return result
-
     } catch (err) {
       db.exec('ROLLBACK')
       throw err
@@ -390,28 +394,32 @@ export class MemorySyncManager {
    */
   private async syncDialogFile(
     filePath: string,
-    options: { force?: boolean } = {}
+    options: { force?: boolean } = {},
   ): Promise<{ added: number }> {
     const result = { added: 0 }
 
     // 1. 获取当前已同步的最大位置
     const db = this.db.getDatabase()
-    const lastSyncResult = db.prepare(`
+    const lastSyncResult = db
+      .prepare(
+        `
       SELECT MAX(source_position) as last_pos 
       FROM memories 
       WHERE source_file = ? AND source_type = 'dialog'
-    `).get(filePath) as { last_pos: number | null }
+    `,
+      )
+      .get(filePath) as { last_pos: number | null }
 
     const startPosition = (lastSyncResult?.last_pos ?? -1) + 1
 
     // 2. 读取文件内容
     const fileContent = await fs.readFile(filePath, 'utf-8')
-    const lines = fileContent.split('\n').filter(line => line.trim())
+    const lines = fileContent.split('\n').filter((line) => line.trim())
 
     // 3. 只处理新消息
     const newLines = lines.slice(startPosition)
     if (newLines.length === 0) {
-      console.log(`[Sync] 对话文件无新内容: ${filePath}`)
+      // 无新内容不输出日志
       return result
     }
 
@@ -427,9 +435,7 @@ export class MemorySyncManager {
     }
 
     // 5. 批量生成嵌入
-    const embeddings = await this.embeddingProvider.embedBatch(
-      newMessages.map(m => m.content)
-    )
+    const embeddings = await this.embeddingProvider.embedBatch(newMessages.map((m) => m.content))
 
     // 6. 批量插入
     db.exec('BEGIN TRANSACTION')
@@ -483,7 +489,6 @@ export class MemorySyncManager {
 
       console.log(`[Sync] 对话文件同步完成: ${filePath} (+${result.added})`)
       return result
-
     } catch (err) {
       db.exec('ROLLBACK')
       throw err
@@ -493,24 +498,23 @@ export class MemorySyncManager {
   /**
    * 批量同步对话消息（用于 batchSync）
    */
-  private async syncDialogBatch(
-    filePath: string,
-    messages: DialogMessageJSON[]
-  ): Promise<void> {
+  private async syncDialogBatch(filePath: string, messages: DialogMessageJSON[]): Promise<void> {
     // 获取当前位置
     const db = this.db.getDatabase()
-    const lastSyncResult = db.prepare(`
+    const lastSyncResult = db
+      .prepare(
+        `
       SELECT MAX(source_position) as last_pos 
       FROM memories 
       WHERE source_file = ? AND source_type = 'dialog'
-    `).get(filePath) as { last_pos: number | null }
+    `,
+      )
+      .get(filePath) as { last_pos: number | null }
 
     const startPosition = (lastSyncResult?.last_pos ?? -1) + 1
 
     // 生成嵌入
-    const embeddings = await this.embeddingProvider.embedBatch(
-      messages.map(m => m.content)
-    )
+    const embeddings = await this.embeddingProvider.embedBatch(messages.map((m) => m.content))
 
     // 插入
     db.exec('BEGIN TRANSACTION')
@@ -561,8 +565,9 @@ export class MemorySyncManager {
 
       db.exec('COMMIT')
 
-      console.log(`[Sync] 批量同步完成: ${filePath} (+${messages.length})`)
-
+      if (messages.length) {
+        console.log(`[Sync] 批量同步完成: ${filePath} (+${messages.length})`)
+      }
     } catch (err) {
       db.exec('ROLLBACK')
       throw err
@@ -575,12 +580,16 @@ export class MemorySyncManager {
   private async cleanupDeletedRecords(): Promise<void> {
     // 软删除超过30天的记录可以物理删除
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
-    
+
     const db = this.db.getDatabase()
-    const result = db.prepare(`
+    const result = db
+      .prepare(
+        `
       SELECT id FROM memories 
       WHERE is_deleted = 1 AND updated_at < ?
-    `).all(thirtyDaysAgo) as Array<{ id: string }>
+    `,
+      )
+      .all(thirtyDaysAgo) as Array<{ id: string }>
 
     for (const row of result) {
       this.db.deleteMemory(row.id)
@@ -692,7 +701,7 @@ export class MemorySyncManager {
  */
 export function createMemorySyncManager(
   db: VectorMemoryDB,
-  embeddingProvider: EmbeddingProviderManager
+  embeddingProvider: EmbeddingProviderManager,
 ): MemorySyncManager {
   return new MemorySyncManager(db, embeddingProvider)
 }
