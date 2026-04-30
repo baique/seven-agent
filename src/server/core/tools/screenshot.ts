@@ -111,8 +111,15 @@ export const screenshotTool = new DynamicStructuredTool({
         `[screenshot] 截图成功: ${result.width}x${result.height}, base64长度=${result.base64.length}`,
       )
 
-      // 直接返回 data URL，模型可识别为图片
-      return imageUrl
+      // 返回 OpenAI 标准 image_url 格式，不经过 ToolResult 包装
+      return [
+        {
+          type: 'image_url',
+          image_url: {
+            url: imageUrl,
+          },
+        },
+      ]
     } catch (error: any) {
       logger.error(`[screenshot] 截图失败: ${error.message}`)
       return `截图失败：${error.message}`

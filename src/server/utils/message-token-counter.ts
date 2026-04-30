@@ -834,6 +834,15 @@ export class MessageTokenCounter {
 
     const formattedMessages = messages.map((msg, msgIdx) => {
       if (ToolMessage.isInstance(msg)) {
+        // 截图工具的返回内容太大，替换为占位符
+        if (msg.name === 'screenshot') {
+          return {
+            role: 'tool',
+            toolName: 'screenshot',
+            toolId: `${msgIdx}_${msg.name}`,
+            content: '[图片已忽略]',
+          }
+        }
         const contentStr =
           typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
         let truncated = truncateToolContent(contentStr, maxLines)
