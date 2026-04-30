@@ -109,7 +109,10 @@ function countSingleMessageTokens(msg: BaseMessage): number {
   const role = msg.type
   numTokens += countTextTokens(role)
 
-  if (msg.content) {
+  // 截图工具的返回内容太大，token统计时忽略其content
+  if (ToolMessage.isInstance(msg) && msg.name === 'screenshot') {
+    numTokens += countTextTokens('[图片]')
+  } else if (msg.content) {
     numTokens += countTextTokens(
       typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
     )
@@ -175,7 +178,10 @@ function countTruncatedMessageTokens(msg: BaseMessage, toolMaxLines: number): nu
   const role = msg.type
   numTokens += countTextTokens(role)
 
-  if (msg.content) {
+  // 截图工具的返回内容太大，token统计时忽略其content
+  if (ToolMessage.isInstance(msg) && msg.name === 'screenshot') {
+    numTokens += countTextTokens('[图片]')
+  } else if (msg.content) {
     let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
     if (ToolMessage.isInstance(msg)) {
       content = truncateToolContent(content, toolMaxLines)
