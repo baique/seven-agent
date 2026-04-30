@@ -12,10 +12,16 @@ import {
   globalShortcut,
 } from 'electron'
 import { join } from 'path'
+import fs from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { logger } from './utils/logger'
+// 先加载环境变量，确保 LOG_LEVEL 在 logger 创建前已加载
+import './config/env'
+import { logger, syncLogLevelWithEnv } from './utils/logger'
 import { getTargetDisplayId, setTargetDisplayId } from './utils/config-store'
 import { getLive2DModelUrl, env } from './config/env'
+
+// 同步日志级别与环境变量，确保 LOG_LEVEL 配置生效
+syncLogLevelWithEnv()
 import { registerIpcHandlers } from './ipc-handlers'
 import { createSplashWindow, updateSplashProgress, closeSplashWindow } from './splash-window'
 import { startServerProcess, stopServerProcess, waitForServerReady } from './server-process'
@@ -581,8 +587,43 @@ function registerGlobalShortcuts(): void {
   })
 }
 
+/**
+ * 检查工作空间必要的目录是否存在
+ * @returns 错误信息数组，为空表示检查通过
+ */
+function checkWorkspaceDirectories(): string[] {
+  const errors: string[] = []
+  const workspacePath = process.env.WORKSPACE || process.cwd()
+
+  // 检查 models 目录
+  const modelsDir = join(workspacePath, 'models')
+  if (!fs.existsSync(modelsDir)) {
+    errors.push(`models 目录不存在: ${modelsDir}`)
+  }
+
+  // 检查 live2d 目录
+  const live2dDir = join(workspacePath, 'live2d')
+  if (!fs.existsSync(live2dDir)) {
+    errors.push(`live2d 目录不存在: ${live2dDir}`)
+  }
+
+  return errors
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.electron')
+
+  // 启动前检查必要目录
+  const checkErrors = checkWorkspaceDirectories()
+  if (checkErrors.length > 0) {
+    const errorMessage = '启动失败：工作空间缺少必要的目录\n\n' + checkErrors.join('\n')
+    logger.error(`[App] ${errorMessage}`)
+    dialog.showErrorBox('启动错误', errorMessage)
+    app.quit()
+    return
+  }
+
+  logger.info(`[App] 工作空间检查通过: ${process.env.WORKSPACE || process.cwd()}`)
 
   /**
    * 注册 local:// 协议处理器

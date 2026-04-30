@@ -5,8 +5,6 @@ import type { MessagesState } from '../state/llm-state'
 import { BrainSpeak } from './agent/brain'
 import { getChatCancelManager } from '../state/chat-cancel'
 import { CTX } from '../state/context'
-import { BUFFER_WINDOW_CONTEXT } from '../state/context/impl/buffer-window'
-import { applyRetentionPolicy } from '../../utils/tool-response-parser'
 import { hookManager } from '../hook'
 
 export const LLMNode: GraphNode<typeof MessagesState.State> = async (state) => {
@@ -17,14 +15,6 @@ export const LLMNode: GraphNode<typeof MessagesState.State> = async (state) => {
   const socket = requestId ? cancelManager.getSocket(requestId) : undefined
 
   logger.info('[LLM] 开始处理消息……')
-
-  // 首次调用LLM时（llmCalls === 0），应用工具保留策略清理rawBody
-  if (state.llmCalls === 0) {
-    const cleaned = applyRetentionPolicy(BUFFER_WINDOW_CONTEXT.getMessages())
-    if (cleaned) {
-      logger.info('[LLM] 首次调用，已应用工具保留策略清理rawBody')
-    }
-  }
 
   // 获取最新消息（用于Hook参数）
   const latestMessage = state.messages.at(-1)

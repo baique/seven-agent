@@ -6,14 +6,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { EventEmitter } from 'events'
 import { logger } from '../utils/logger'
+import { debounce } from '../utils/watch-debounce'
 
 export interface ModelConfig {
   [key: string]: unknown
 }
 
 function getModelsDir(): string {
-  const resRoot = process.env.RES_ROOT || process.cwd()
-  return path.join(resRoot, 'models')
+  // 从工作空间加载 models 目录
+  const workspacePath = process.env.WORKSPACE || process.cwd()
+  return path.join(workspacePath, 'models')
 }
 
 function loadModelConfig(modelName: string): ModelConfig | null {
@@ -96,14 +98,18 @@ export class ModelConfigManager extends EventEmitter {
 
     const allModelNames = [this.primaryModelName, ...this.fallbackNames]
 
+    const debouncedReload = debounce((modelName: string) => {
+      logger.info(`[ModelConfig] 检测到 ${modelName} 配置变化，重新加载`)
+      const config = loadModelConfig(modelName)
+      this.emit('modelConfigChange', modelName, config)
+    }, { debounceMs: 500 })
+
     const watchFile = (modelName: string) => {
       const configPath = path.join(modelsDir, `${modelName}.json`)
       if (fs.existsSync(configPath)) {
         fs.watchFile(configPath, { interval: 1000 }, (curr, prev) => {
           if (curr.mtime.getTime() !== prev.mtime.getTime()) {
-            logger.info(`[ModelConfig] 检测到 ${modelName} 配置变化，重新加载`)
-            const config = loadModelConfig(modelName)
-            this.emit('modelConfigChange', modelName, config)
+            debouncedReload(modelName)
           }
         })
       }

@@ -93,20 +93,9 @@ const DEFAULT_STATE: CharacterStateData = {
 
 export class CharacterStateManager extends EventEmitter implements CacheContextBuilder {
   private state: CharacterStateData | null = null
-  private broadcastCallback: ((event: string, data: unknown) => void) | null = null
 
   constructor() {
     super()
-  }
-
-  setBroadcastCallback(callback: (event: string, data: unknown) => void): void {
-    this.broadcastCallback = callback
-  }
-
-  private broadcast(event: string, data: unknown): void {
-    if (this.broadcastCallback) {
-      this.broadcastCallback(event, data)
-    }
   }
 
   cache(): boolean {
@@ -273,12 +262,6 @@ export class CharacterStateManager extends EventEmitter implements CacheContextB
     }
     await this.persist()
     logger.debug({ pad: state.pad }, '[State] 更新PAD')
-    this.broadcast('personality:updated', {
-      pad: state.pad,
-      bigFive: state.bigFive,
-      moodDescription: state.moodDescription,
-      activity: state.activity,
-    })
   }
 
   async updateBigFive(updates: Partial<BigFive>): Promise<void> {
@@ -296,12 +279,6 @@ export class CharacterStateManager extends EventEmitter implements CacheContextB
     }
     await this.persist()
     logger.debug({ bigFive: state.bigFive }, '[State] 更新Big Five')
-    this.broadcast('personality:updated', {
-      pad: state.pad,
-      bigFive: state.bigFive,
-      moodDescription: state.moodDescription,
-      activity: state.activity,
-    })
   }
 
   /**

@@ -45,13 +45,9 @@ export default defineConfig({
         overlay: false,
       },
       fs: {
-        allow: [resolve('src/renderer'), resolve('resources')],
+        allow: [resolve('src/renderer'), process.env.WORKSPACE || resolve('.')],
       },
       proxy: {
-        '/model': {
-          target: 'http://localhost',
-          changeOrigin: true,
-        },
         '/vtube-model': {
           target: 'http://localhost',
           changeOrigin: true,
@@ -71,12 +67,16 @@ export default defineConfig({
         name: 'serve-resources',
         configureServer(server) {
           server.middlewares.use('/model', (req, res, next) => {
-            const filePath = path.join(__dirname, 'resources', 'model', req.url || '')
+            // 从工作空间的 live2d 目录提供文件
+            const workspacePath = process.env.WORKSPACE || process.cwd()
+            const filePath = path.join(workspacePath, 'live2d', req.url || '')
             if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
               const ext = path.extname(filePath)
               const mimeTypes: Record<string, string> = {
                 '.json': 'application/json',
                 '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
                 '.moc3': 'application/octet-stream',
               }
               res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream')

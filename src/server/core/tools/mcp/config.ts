@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { logger } from '../../../utils/logger'
 import { paths, env } from '../../../config/env'
+import { debounce } from '../../../utils/watch-debounce'
 import fs from 'node:fs'
 import path from 'node:path'
 import { homedir } from 'node:os'
@@ -209,10 +210,17 @@ class MCPConfigManager extends EventEmitter {
         this.createDefaultConfig()
       }
 
-      fs.watchFile(this.workspaceConfigPath, { interval: 1000 }, (curr, prev) => {
-        if (curr.mtime.getTime() !== prev.mtime.getTime()) {
+      const debouncedReload = debounce(
+        () => {
           logger.info('[MCP] 工作空间配置已变更')
           this.emit('change')
+        },
+        { debounceMs: 500 },
+      )
+
+      fs.watchFile(this.workspaceConfigPath, { interval: 1000 }, (curr, prev) => {
+        if (curr.mtime.getTime() !== prev.mtime.getTime()) {
+          debouncedReload()
         }
       })
       this.isWorkspaceWatching = true
@@ -230,10 +238,17 @@ class MCPConfigManager extends EventEmitter {
     try {
       if (!fs.existsSync(this.systemConfigPath)) return
 
-      fs.watchFile(this.systemConfigPath, { interval: 1000 }, (curr, prev) => {
-        if (curr.mtime.getTime() !== prev.mtime.getTime()) {
+      const debouncedReload = debounce(
+        () => {
           logger.info('[MCP] 系统级配置已变更')
           this.emit('change')
+        },
+        { debounceMs: 500 },
+      )
+
+      fs.watchFile(this.systemConfigPath, { interval: 1000 }, (curr, prev) => {
+        if (curr.mtime.getTime() !== prev.mtime.getTime()) {
+          debouncedReload()
         }
       })
       this.isSystemWatching = true

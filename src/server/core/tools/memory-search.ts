@@ -5,38 +5,104 @@ import { readdirSync, readFileSync, existsSync } from 'fs'
 import { paths } from '../../config/env'
 import { logger } from '../../utils/logger'
 import type { MemoryMessage } from '../../memory'
-import { jsonMemoryManager } from '../../memory/json-memory-manager'
+import { jsonMemoryManager, vectorMemoryService } from '../../memory'
 import { ToolResult } from '../../utils/tool-response'
+import type { DialogMemoryMetadata } from '../../memory/vector/types'
 
-const MAX_RESULTS_PER_CALL = 200
+const MAX_RESULTS_PER_CALL = 50
 const MAX_CONTENT_LENGTH = 500
 
 const DEFAULT_MIN_IMPORTANCE = 0.3
 
 export const searchMemoryTool = new DynamicStructuredTool({
   name: 'memory_search',
-  description: `搜索已记录的重要信息。
+  description: `搜索已记录的重要信息（支持语义搜索）。
 **使用建议：**
-- 使用具体的关键词搜索，避免过于宽泛的词
-- 每次调用最多返回 200 条结果
-- 如果结果不完整，可以使用 offset 参数继续获取
-- 注意：任务请使用 query_tasks 工具查询，不在记忆中存储
+- 支持自然语言描述，不仅限于关键词
+- 使用具体的问题或描述，获得更准确的语义匹配
+- 可以结合时间范围缩小搜索范围
+- 每次调用最多返回 50 条结果
 `,
   schema: z.object({
-    query: z.string().describe('搜索关键词或自然语言描述'),
-    offset: z.number().min(0).default(0).describe('跳过前N条结果，用于分页获取更多结果'),
-    minImportance: z
-      .number()
-      .min(0)
-      .max(1)
-      .default(DEFAULT_MIN_IMPORTANCE)
-      .describe('最低重要性过滤，默认0.3'),
+    query: z.string().describe('搜索查询，支持自然语言描述'),
+    maxResults: z.number().min(1).max(50).default(10).describe('最大返回结果数'),
+    sourceTypes: z
+      .array(z.enum(['memory', 'dialog']))
+      .optional()
+      .describe('指定搜索来源，不指定则搜索全部'),
+    useVectorSearch: z.boolean().default(true).describe('是否使用向量语义搜索（默认true）'),
   }),
   func: async (input) => {
     const toolName = 'memory_search'
     try {
-      const { query, offset = 0, minImportance = DEFAULT_MIN_IMPORTANCE } = input
+      const { query, maxResults = 10, sourceTypes, useVectorSearch = true } = input
 
+      // 优先使用向量搜索（如果服务已初始化且启用）
+      if (useVectorSearch && vectorMemoryService.isInitialized()) {
+        try {
+          const results = await vectorMemoryService.search(query, {
+            maxResults,
+            sourceTypes: sourceTypes as Array<'memory' | 'dialog'> | undefined,
+          })
+
+          if (results.length > 0) {
+            const outputParts: string[] = []
+            const memoryResults = results.filter((r) => r.sourceType === 'memory')
+            const dialogResults = results.filter((r) => r.sourceType === 'dialog')
+
+            if (memoryResults.length > 0) {
+              outputParts.push('# 长期记忆')
+              for (const item of memoryResults) {
+                outputParts.push(
+                  JSON.stringify({
+                    id: item.sourceId,
+                    description: item.content,
+                    score: Math.round(item.score * 100) + '%',
+                    createdAt: new Date(item.createdAt).toISOString(),
+                  }),
+                )
+              }
+            }
+
+            if (dialogResults.length > 0) {
+              outputParts.push('# 过往对话')
+              for (const item of dialogResults) {
+                const dialogMeta = item.metadata as DialogMemoryMetadata | undefined
+                outputParts.push(
+                  JSON.stringify({
+                    id: item.sourceId,
+                    role: dialogMeta?.role || 'unknown',
+                    content: item.snippet,
+                    score: Math.round(item.score * 100) + '%',
+                    timestamp: item.createdAt,
+                  }),
+                )
+              }
+            }
+
+            logger.info(
+              `[SearchMemory] 向量搜索 "${query}" 找到 ${memoryResults.length} 条长期记忆 + ${dialogResults.length} 条对话记录`,
+            )
+
+            return await ToolResult.success(toolName, {
+              msg: `找到 ${results.length} 条相关记录`,
+              body: outputParts.join('\n'),
+              extra: {
+                query,
+                totalResults: results.length,
+                longTermCount: memoryResults.length,
+                dialogCount: dialogResults.length,
+                searchMethod: 'vector',
+              },
+            })
+          }
+        } catch (vectorErr) {
+          logger.warn(`[SearchMemory] 向量搜索失败，回退到关键词搜索: ${vectorErr}`)
+          // 回退到关键词搜索
+        }
+      }
+
+      // 关键词搜索（传统方式）
       const keywords = query
         .toLowerCase()
         .split(/\s+/)
@@ -48,36 +114,39 @@ export const searchMemoryTool = new DynamicStructuredTool({
         })
       }
 
+      const searchMemory = !sourceTypes || sourceTypes.includes('memory')
+      const searchDialog = !sourceTypes || sourceTypes.includes('dialog')
+
       const [longTermResults, dialogResults] = await Promise.all([
-        searchLongTermMemories(keywords, minImportance),
-        searchDialogRecords(keywords),
+        searchMemory
+          ? searchLongTermMemories(keywords, DEFAULT_MIN_IMPORTANCE)
+          : Promise.resolve([]),
+        searchDialog ? searchDialogRecords(keywords) : Promise.resolve([]),
       ])
 
       const outputParts: string[] = []
 
       if (longTermResults.length > 0) {
         outputParts.push('# 长期记忆')
-        for (const item of longTermResults.slice(offset, offset + MAX_RESULTS_PER_CALL)) {
+        for (const item of longTermResults.slice(0, maxResults)) {
           outputParts.push(JSON.stringify(item))
         }
       }
 
-      const dialogOffset = Math.max(0, offset - longTermResults.length)
       if (dialogResults.length > 0) {
         outputParts.push('# 过往对话')
-        for (const item of dialogResults.slice(dialogOffset, dialogOffset + MAX_RESULTS_PER_CALL)) {
+        for (const item of dialogResults.slice(0, maxResults)) {
           outputParts.push(JSON.stringify(item))
         }
       }
 
       const totalCount = longTermResults.length + dialogResults.length
-      const hasMore = offset + MAX_RESULTS_PER_CALL < totalCount
 
       logger.info(
-        `[SearchMemory] 搜索 "${query}" 找到 ${longTermResults.length} 条长期记忆 + ${dialogResults.length} 条对话记录`,
+        `[SearchMemory] 关键词搜索 "${query}" 找到 ${longTermResults.length} 条长期记忆 + ${dialogResults.length} 条对话记录`,
       )
 
-      const msg = `找到 ${totalCount} 条记录${hasMore ? '，还有更多' : ''}`
+      const msg = `找到 ${totalCount} 条记录`
 
       if (outputParts.length > 0) {
         return await ToolResult.success(toolName, {
@@ -88,8 +157,7 @@ export const searchMemoryTool = new DynamicStructuredTool({
             totalResults: totalCount,
             longTermCount: longTermResults.length,
             dialogCount: dialogResults.length,
-            offset,
-            hasMore,
+            searchMethod: 'keyword',
           },
         })
       }
@@ -198,41 +266,43 @@ function matchesKeywords(content: string | undefined | null, keywords: string[])
 
 function extractContext(content: string | undefined | null, keywords: string[]): string {
   if (!content || typeof content !== 'string') return ''
-  if (content.length <= MAX_CONTENT_LENGTH) return content
 
-  const lowerContent = content.toLowerCase()
-  let bestIndex = content.length
+  const sentences = content.split(/[.!?。！？]/)
+  const relevantSentences: string[] = []
 
-  for (const keyword of keywords) {
-    const index = lowerContent.indexOf(keyword)
-    if (index !== -1 && index < bestIndex) {
-      bestIndex = index
+  for (const sentence of sentences) {
+    if (matchesKeywords(sentence, keywords)) {
+      relevantSentences.push(sentence.trim())
     }
   }
 
-  const start = Math.max(0, bestIndex - 100)
-  const end = Math.min(content.length, start + MAX_CONTENT_LENGTH)
-  const truncated = content.slice(start, end)
+  if (relevantSentences.length > 0) {
+    return relevantSentences.join('... ').slice(0, MAX_CONTENT_LENGTH)
+  }
 
-  return (start > 0 ? '...' : '') + truncated + (end < content.length ? '...' : '')
+  return content.slice(0, MAX_CONTENT_LENGTH)
 }
 
 function readMessagesFromFile(filePath: string): MemoryMessage[] {
-  const content = readFileSync(filePath, 'utf-8')
-  const lines = content.trim().split('\n')
   const messages: MemoryMessage[] = []
 
-  for (const line of lines) {
-    if (line.trim()) {
+  try {
+    const content = readFileSync(filePath, 'utf-8')
+    const lines = content.split('\n')
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+
       try {
-        messages.push(JSON.parse(line) as MemoryMessage)
-      } catch {
-        // 忽略解析错误
+        const message = JSON.parse(line) as MemoryMessage
+        messages.push(message)
+      } catch (e) {
+        // 忽略解析错误的行
       }
     }
+  } catch (error) {
+    logger.error(`[SearchMemory] 读取文件失败 ${filePath}: ${error}`)
   }
 
   return messages
 }
-
-export const memorySearchTools = [searchMemoryTool]

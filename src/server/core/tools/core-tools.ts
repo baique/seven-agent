@@ -2,7 +2,7 @@ import { DynamicStructuredTool } from '@langchain/core/tools'
 import { fileSystemTools } from './filesystem'
 import { pythonREPLTool } from './python'
 import { getSystemInfoTool, getCurrentTimeTool, getClipboardTool, setClipboardTool } from './system'
-import { memorySearchTools } from './memory-search'
+import { searchMemoryTool } from './memory-search'
 import { updateMemoryTool } from './memory-update'
 import { memoryDeepSearchTools } from './memory-deep-search'
 import { skillsTools } from './skills'
@@ -13,16 +13,18 @@ import { terminalTool } from './terminal'
 import { reminderTools } from './reminder-tool'
 import { subAgentTools } from '../agents/subagent-tool'
 import { extManagementTools } from './ext-tools'
+import { screenshotTool } from './screenshot'
 
 export { fileSystemTools, pythonREPLTool }
 export { getSystemInfoTool, getCurrentTimeTool, getClipboardTool, setClipboardTool }
-export { memorySearchTools, updateMemoryTool, memoryDeepSearchTools }
+export { searchMemoryTool, updateMemoryTool, memoryDeepSearchTools }
 export { skillsTools }
 export { openWindowTool as showNotificationTool }
 export { taskTools }
 export { terminalTool }
 export { reminderTools }
 export { subAgentTools }
+export { screenshotTool }
 
 /**
  * 核心工具 - 主 Agent 常驻上下文
@@ -34,10 +36,11 @@ export const coreTools: DynamicStructuredTool[] = [
   ...taskTools,
   openWindowTool,
   ...reminderTools,
-  ...memorySearchTools,
+  searchMemoryTool,
   ...memoryDeepSearchTools,
   ...fileSystemTools,
   terminalTool,
+  screenshotTool,
   getSystemInfoTool,
   getCurrentTimeTool,
   getClipboardTool,

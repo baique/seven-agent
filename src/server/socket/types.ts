@@ -29,6 +29,18 @@ export const SocketResponseType = {
   BUFFER_MESSAGE_ADDED: 'buffer:message:added',
   BUFFER_MESSAGE_CONSUMED: 'buffer:message:consumed',
   BUFFER_MESSAGE_CANCELLED: 'buffer:message:cancelled',
+
+  // 人格状态更新
+  PERSONALITY_UPDATED: 'personality:updated',
+
+  // 任务更新
+  TASK_UPDATED: 'task:updated',
+
+  // 终端事件
+  TERMINAL_OUTPUT: 'terminal:output',
+  TERMINAL_STATUS_CHANGED: 'terminal:status_changed',
+  TERMINAL_SESSION_CREATED: 'terminal:session_created',
+  TERMINAL_SESSION_CLOSED: 'terminal:session_closed',
 } as const
 
 export interface SocketResponse<T = unknown> {

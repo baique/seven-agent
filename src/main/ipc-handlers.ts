@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, screen, nativeImage } from 'electron'
+import { ipcMain, BrowserWindow, screen, nativeImage, desktopCapturer } from 'electron'
 import http from 'node:http'
 import { logger } from './utils/logger'
 import { popupManager } from './core/tools/popup-manager'
@@ -536,6 +536,83 @@ export function registerIpcHandlers(mainWindow: BrowserWindow | null): void {
       return { success: false, error: error.message, tools: [] }
     }
   })
+
+  /**
+   * 截图 - 使用 Electron desktopCapturer 捕获屏幕
+   */
+  ipcMain.handle(
+    'screenshot:capture',
+    async (
+      _event,
+      data: { displayId?: number; format?: 'png' | 'jpeg'; quality?: number },
+    ): Promise<{
+      success: boolean
+      base64?: string
+      format?: string
+      width?: number
+      height?: number
+      error?: string
+    }> => {
+      try {
+        const format = data.format || 'jpeg'
+        const quality = data.quality || 75
+
+        // 获取所有屏幕源
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: screen.getPrimaryDisplay().workAreaSize,
+        })
+
+        if (sources.length === 0) {
+          return { success: false, error: '未找到可截取的屏幕' }
+        }
+
+        // 选择目标显示器
+        let source: Electron.DesktopCapturerSource
+        if (data.displayId !== undefined) {
+          // 根据 displayId 匹配（desktopCapturer 的 display_id 在 source 中）
+          const displays = screen.getAllDisplays()
+          const targetDisplay = displays.find((d) => d.id === data.displayId)
+          if (targetDisplay) {
+            // 通过名称匹配
+            const matched = sources.find((s) => s.name.includes(targetDisplay.id.toString()))
+            source = matched || sources[0]
+          } else {
+            source = sources[0]
+          }
+        } else {
+          // 默认截主屏幕
+          source = sources[0]
+        }
+
+        const image = source.thumbnail
+        const size = image.getSize()
+
+        // 转换为指定格式的 base64
+        let base64: string
+        if (format === 'jpeg') {
+          base64 = image.toJPEG(quality).toString('base64')
+        } else {
+          base64 = image.toPNG().toString('base64')
+        }
+
+        logger.info(
+          `[IPC] 截图成功: ${size.width}x${size.height}, format=${format}, quality=${quality}, base64长度=${base64.length}`,
+        )
+
+        return {
+          success: true,
+          base64,
+          format,
+          width: size.width,
+          height: size.height,
+        }
+      } catch (error: any) {
+        logger.error(`[IPC] 截图失败: ${error.message}`)
+        return { success: false, error: error.message }
+      }
+    },
+  )
 
   logger.info('[IPC] 所有IPC处理器已注册')
 }

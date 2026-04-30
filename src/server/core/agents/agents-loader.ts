@@ -1,8 +1,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import { logger } from '../../utils/logger'
 import { paths } from '../../config/env'
+import { watchWithDebounce } from '../../utils/watch-debounce'
 
 /**
  * 工具引用类型
@@ -383,54 +383,30 @@ export function clearAgentsCache(): void {
 
 // ==================== 文件监听 ====================
 
-let agentsWatcher: FSWatcher | null = null
-let isWatching = false
-let debounceTimer: NodeJS.Timeout | null = null
-const DEBOUNCE_MS = 500
-
-/**
- * 防抖清除缓存
- */
-function debouncedClearAgentsCache(): void {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-  }
-  debounceTimer = setTimeout(() => {
-    clearAgentsCache()
-    debounceTimer = null
-  }, DEBOUNCE_MS)
-}
+let agentsWatcher: ReturnType<typeof watchWithDebounce> | null = null
 
 /**
  * 监听agents目录变化
  */
 export function startAgentsWatcher(): void {
-  if (isWatching) {
+  if (agentsWatcher) {
     return
   }
 
   const agentsDir = path.join(paths.WORKSPACE_ROOT, 'agents')
 
-  try {
-    agentsWatcher = watch(agentsDir, { recursive: true }, (_eventType, filename) => {
-      if (!filename) return
-
-      // 只监听AGENT.md文件的变化
-      if (filename.endsWith('AGENT.md')) {
-        debouncedClearAgentsCache()
-      }
-    })
-
-    isWatching = true
-    logger.info(`[Agents] 开始监听目录: ${agentsDir}`)
-
-    // 监听错误
-    agentsWatcher.on('error', (error) => {
-      logger.error(`[Agents] 监听出错: ${error}`)
-    })
-  } catch (error) {
-    logger.error(`[Agents] 启动监听失败: ${error}`)
-  }
+  agentsWatcher = watchWithDebounce(
+    agentsDir,
+    () => {
+      logger.info('[Agents] 检测到子代理目录变化，重新加载')
+      clearAgentsCache()
+    },
+    {
+      debounceMs: 500,
+      recursive: true,
+      filter: (filename) => filename.endsWith('AGENT.md'),
+    },
+  )
 }
 
 /**
@@ -438,9 +414,8 @@ export function startAgentsWatcher(): void {
  */
 export function stopAgentsWatcher(): void {
   if (agentsWatcher) {
-    agentsWatcher.close()
+    agentsWatcher.stop()
     agentsWatcher = null
-    isWatching = false
     logger.info('[Agents] 已停止监听')
   }
 }

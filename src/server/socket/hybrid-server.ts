@@ -8,6 +8,8 @@ import { getTTSService } from '../tts'
 import { nanoid } from 'nanoid'
 import type { MemoryMessage } from '../memory'
 import { STATE_CONTEXT } from '../core/state/context/impl/character-state'
+import fs from 'node:fs'
+import path from 'node:path'
 
 /**
  * 检查端口是否被占用
@@ -182,6 +184,8 @@ export class HybridServer {
       this.handleMCPRefreshAll(req, res)
     } else if (req.method === 'GET' && url === '/api/mcp/tools') {
       this.handleMCPGetTools(req, res)
+    } else if (req.method === 'GET' && url.startsWith('/live2d/')) {
+      this.handleLive2DStaticFile(req, res, url)
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Not found', code: 404 }))
@@ -480,6 +484,63 @@ export class HybridServer {
       logger.error({ error }, '[HTTP MCP] 获取工具列表失败')
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ code: 500, error: msg, success: false, data: [] }))
+    }
+  }
+
+  /**
+   * 处理 Live2D 静态文件请求
+   */
+  private handleLive2DStaticFile(req: IncomingMessage, res: ServerResponse, url: string): void {
+    // 从 URL 中提取相对路径，例如 /live2d/LilyaBee/model.json -> LilyaBee/model.json
+    const relativePath = decodeURIComponent(url.slice('/live2d/'.length))
+    const workspacePath = process.env.WORKSPACE || process.cwd()
+    const filePath = path.join(workspacePath, 'live2d', relativePath)
+
+    // 安全检查：确保文件在工作空间内
+    const resolvedPath = path.resolve(filePath)
+    const resolvedWorkspace = path.resolve(workspacePath, 'live2d')
+    if (!resolvedPath.startsWith(resolvedWorkspace)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Access denied', code: 403 }))
+      return
+    }
+
+    if (!fs.existsSync(filePath)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'File not found', code: 404 }))
+      return
+    }
+
+    // 根据文件扩展名设置 Content-Type
+    const ext = path.extname(filePath).toLowerCase()
+    const mimeTypes: Record<string, string> = {
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.moc3': 'application/octet-stream',
+      '.exp3.json': 'application/json',
+      '.motion3.json': 'application/json',
+      '.physics3.json': 'application/json',
+      '.pose3.json': 'application/json',
+      '.user3.json': 'application/json',
+      '.model3.json': 'application/json',
+    }
+
+    const contentType = mimeTypes[ext] || 'application/octet-stream'
+
+    try {
+      const content = fs.readFileSync(filePath)
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+      })
+      res.end(content)
+      logger.debug(`[Live2D] 提供文件: ${relativePath}`)
+    } catch (error) {
+      logger.error({ error }, `[Live2D] 读取文件失败: ${filePath}`)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Failed to read file', code: 500 }))
     }
   }
 

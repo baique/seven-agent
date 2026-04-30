@@ -7,7 +7,7 @@ import {
   getCurrentTimeTool,
   getClipboardTool,
   setClipboardTool,
-  memorySearchTools,
+  searchMemoryTool,
   updateMemoryTool,
   memoryDeepSearchTools,
   skillsTools,
@@ -16,6 +16,7 @@ import {
   terminalTool,
   reminderTools,
   subAgentTools,
+  screenshotTool,
 } from './core-tools'
 import { mcpToolManager, parseMCPToolName, mcpConfigManager, mcpToolCacheManager } from './mcp'
 import { getMCPServers } from './mcp/config'
@@ -28,7 +29,7 @@ export {
   getCurrentTimeTool,
   getClipboardTool,
   setClipboardTool,
-  memorySearchTools,
+  searchMemoryTool,
   updateMemoryTool,
   memoryDeepSearchTools,
   skillsTools,
@@ -37,6 +38,7 @@ export {
   terminalTool,
   reminderTools,
   subAgentTools,
+  screenshotTool,
   mcpToolManager,
   parseMCPToolName,
   coreTools,

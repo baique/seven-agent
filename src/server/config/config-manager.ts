@@ -7,6 +7,7 @@ import { config } from 'dotenv'
 import path from 'node:path'
 import fs from 'node:fs'
 import { logger, reloadModuleLogLevels, setLogLevel } from '../utils/logger'
+import { debounce } from '../utils/watch-debounce'
 
 /**
  * 可热重载的配置项类型
@@ -38,18 +39,10 @@ export interface ReloadableConfig {
   MINIMAX_TTS_MODEL: string
   MINIMAX_TTS_VOICE: string
   MINIMAX_TTS_BASE_URL: string
-  /** 工具调用限制 */
-  TOOL_CALL_LIMITS: string
-  MAX_TOOL_CALLS_PER_GRAPH: number
   /** 摘要配置 */
-  SUMMARY_UPDATE_COUNT: number
   SUMMARY_FORCE_TOKEN: number
-  SUMMARY_BASE_TOKEN: number
-  SUMMARY_KEEP_TOKEN: number
   NOTES_TRIGGER_TOKEN: number
   NOTES_TRIGGER_ROUNDS: number
-  NOTES_MAX_SIZE: number
-  BUFFER_TAIL_PERCENT: number
   /** 极限阈值 */
   EXTREME_THRESHOLD: number
   /** 文件清理 */
@@ -83,12 +76,6 @@ export interface ReloadableConfig {
   SCENE_BOUNDARY_TIME_GAP_SECONDS: number
   /** 场景边界验证-检测窗口大小(轮数) */
   SCENE_BOUNDARY_WINDOW_SIZE: number
-  /** 笔记片段合并阈值 */
-  SEGMENT_MERGE_THRESHOLD: number
-  /** 会话笔记整合触发阈值（token数） */
-  SESSION_NODE_MAX_TOKENS: number
-  /** 情感事件最大保留条数 */
-  EMOTIONAL_EVENTS_MAX: number
   /** 场景边界压缩-保留重叠轮数 */
   SCENE_BOUNDARY_OVERLAP_ROUNDS: number
   /** 碎片记忆保留时间（小时） */
@@ -186,16 +173,9 @@ class ConfigManager extends EventEmitter {
       MINIMAX_TTS_MODEL: getEnv('MINIMAX_TTS_MODEL', 'speech-02-turbo') as string,
       MINIMAX_TTS_VOICE: getEnv('MINIMAX_TTS_VOICE', 'maincommon') as string,
       MINIMAX_TTS_BASE_URL: getEnv('MINIMAX_TTS_BASE_URL', 'https://api.minimaxi.com') as string,
-      TOOL_CALL_LIMITS: getEnv('TOOL_CALL_LIMITS', '{}') as string,
-      MAX_TOOL_CALLS_PER_GRAPH: getNumber('MAX_TOOL_CALLS_PER_GRAPH', 20),
-      SUMMARY_UPDATE_COUNT: getNumber('SUMMARY_UPDATE_COUNT', 30),
       SUMMARY_FORCE_TOKEN: getNumber('SUMMARY_FORCE_TOKEN', 60000),
-      SUMMARY_BASE_TOKEN: getNumber('SUMMARY_BASE_TOKEN', 45000),
-      SUMMARY_KEEP_TOKEN: getNumber('SUMMARY_KEEP_TOKEN', 8000),
       NOTES_TRIGGER_TOKEN: getNumber('NOTES_TRIGGER_TOKEN', 15000),
       NOTES_TRIGGER_ROUNDS: getNumber('NOTES_TRIGGER_ROUNDS', 10),
-      NOTES_MAX_SIZE: getNumber('NOTES_MAX_SIZE', 20000),
-      BUFFER_TAIL_PERCENT: getNumber('BUFFER_TAIL_PERCENT', 30),
       EXTREME_THRESHOLD: getNumber('EXTREME_THRESHOLD', 100000),
       CLEANUP_OLD_FILES_DAYS: getNumber('CLEANUP_OLD_FILES_DAYS', 7),
       LOG_LEVEL: getEnv('LOG_LEVEL', 'info') as string,
@@ -215,9 +195,6 @@ class ConfigManager extends EventEmitter {
       SCENE_BOUNDARY_TOOL_DENSITY_JUMP: getNumber('SCENE_BOUNDARY_TOOL_DENSITY_JUMP', 0.3),
       SCENE_BOUNDARY_TIME_GAP_SECONDS: getNumber('SCENE_BOUNDARY_TIME_GAP_SECONDS', 180),
       SCENE_BOUNDARY_WINDOW_SIZE: getNumber('SCENE_BOUNDARY_WINDOW_SIZE', 5),
-      SEGMENT_MERGE_THRESHOLD: getNumber('SEGMENT_MERGE_THRESHOLD', 3),
-      SESSION_NODE_MAX_TOKENS: getNumber('SESSION_NODE_MAX_TOKENS', 20000),
-      EMOTIONAL_EVENTS_MAX: getNumber('EMOTIONAL_EVENTS_MAX', 30),
       SCENE_BOUNDARY_OVERLAP_ROUNDS: getNumber('SCENE_BOUNDARY_OVERLAP_ROUNDS', 3),
       FRAGMENT_MEMORY_RETENTION_HOURS: getNumber('FRAGMENT_MEMORY_RETENTION_HOURS', 72),
     }
@@ -258,11 +235,17 @@ class ConfigManager extends EventEmitter {
 
   /**
    * 应用日志级别变更
+   * 只在配置真正发生变更时应用（跳过首次加载）
    */
   private applyLogLevelChanges(changes: ConfigChangeEvent[]): void {
     let moduleLogLevelsChanged = false
 
     for (const change of changes) {
+      // 跳过首次加载（oldValue 为 undefined 表示是首次加载）
+      if (change.oldValue === undefined) {
+        continue
+      }
+
       if (change.key === 'LOG_LEVEL') {
         if (change.newValue !== undefined) {
           setLogLevel(String(change.newValue))
@@ -316,10 +299,14 @@ class ConfigManager extends EventEmitter {
         return
       }
 
+      const debouncedReload = debounce(() => {
+        logger.info('[ConfigManager] 检测到 .env 文件变化，重新加载配置')
+        this.reload()
+      }, { debounceMs: 500 })
+
       fs.watchFile(this.envPath, { interval: 1000 }, (curr, prev) => {
         if (curr.mtime.getTime() !== prev.mtime.getTime()) {
-          logger.info('[ConfigManager] 检测到 .env 文件变化，重新加载配置')
-          this.reload()
+          debouncedReload()
         }
       })
       this.isWatching = true

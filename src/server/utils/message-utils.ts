@@ -39,7 +39,9 @@ export function truncateToolResponse(content: string): string {
       result._note = '图片数据已省略'
       return JSON.stringify(result)
     }
-  } catch {}
+  } catch (_) {
+    // 忽略解析错误，保持原始内容
+  }
 
   if (typeof content === 'string' && content.includes('data:image')) {
     return '[图片数据已省略]'
@@ -88,7 +90,9 @@ export function maskFileContent(content: string): string {
         hint: '文件内容已掩码，使用 reload_file_content 工具重新读取',
       })
     }
-  } catch {}
+  } catch (_) {
+    // 忽略解析错误，保持原始内容
+  }
   return content
 }
 
@@ -99,7 +103,10 @@ export function maskFileContent(content: string): string {
  * @param maskFileContent 是否对文件内容进行掩码（用于历史消息），默认false
  * @returns BaseMessage数组
  */
-export function convertToMessages(messages: MemoryMessage[], mask = false): BaseMessage[] {
+export function convertMemoryMessageToBaseMessages(
+  messages: MemoryMessage[],
+  mask = false,
+): BaseMessage[] {
   const newMessages: BaseMessage[] = []
 
   messages.forEach((message) => {
@@ -115,7 +122,9 @@ export function convertToMessages(messages: MemoryMessage[], mask = false): Base
         } else if (parsed && typeof parsed === 'object' && parsed.commands) {
           aiContent = JSON.stringify(parsed.commands)
         }
-      } catch {}
+      } catch (_) {
+        // 忽略解析错误，保持原始内容
+      }
     }
 
     switch (message.type) {
@@ -125,7 +134,7 @@ export function convertToMessages(messages: MemoryMessage[], mask = false): Base
       case 'system':
         msg = new SystemMessage(message.content)
         break
-      case 'ai':
+      case 'ai': {
         const normalizedToolCalls = (message.toolCalls || []).map((tc: any) => {
           let args = tc.args
           if (args && typeof args === 'object') {
@@ -144,7 +153,9 @@ export function convertToMessages(messages: MemoryMessage[], mask = false): Base
           } else if (typeof args === 'string') {
             try {
               args = JSON.parse(args)
-            } catch {}
+            } catch (_) {
+              // 忽略解析错误，保持原始内容
+            }
           }
           return { ...tc, args }
         })
@@ -155,7 +166,8 @@ export function convertToMessages(messages: MemoryMessage[], mask = false): Base
             normalizedToolCalls.length > 0 ? { tool_calls: normalizedToolCalls } : {},
         })
         break
-      case 'tool':
+      }
+      case 'tool': {
         let toolContent = message.content
         toolContent = truncateToolResponse(toolContent)
         if (mask) {
@@ -168,6 +180,7 @@ export function convertToMessages(messages: MemoryMessage[], mask = false): Base
           status: message.status,
         })
         break
+      }
     }
     if (msg) {
       msg.id = message.id

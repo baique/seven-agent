@@ -113,11 +113,9 @@ export interface BeforeToolCallParams {
   /** WebSocket连接 */
   socket?: WebSocket
   /** 用户消息 */
-  message: string
+  message: BaseMessage
   /** 状态 */
   state: typeof MessagesState.State
-  /** 本轮AI响应 */
-  llmResponse: BaseMessage
   /** 工具名称 */
   toolName: string
   /** 工具参数 */
@@ -133,17 +131,17 @@ export interface AfterToolCallParams {
   /** WebSocket连接 */
   socket?: WebSocket
   /** 用户消息 */
-  message: string
+  message: BaseMessage
   /** 状态 */
   state: typeof MessagesState.State
-  /** 本轮AI响应 */
-  llmResponse: BaseMessage
   /** 工具名称 */
   toolName: string
   /** 工具参数 */
   toolArgs: Record<string, unknown>
-  /** 工具响应 */
-  toolResponse: BaseMessage
+  /** 工具响应（成功时存在） */
+  toolResponse?: BaseMessage
+  /** 错误信息（失败时存在） */
+  error?: string
   /** 请求ID */
   requestId: string
 }
@@ -170,6 +168,12 @@ export interface AfterSummaryParams {
   summaryResult: SessionNotes
   /** 请求ID（可选） */
   requestId?: string
+  /** 摘要前的token数 */
+  beforeTokens: number
+  /** 摘要后的token数 */
+  afterTokens: number
+  /** 节省的token数 */
+  savedTokens: number
 }
 
 /**

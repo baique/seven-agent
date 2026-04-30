@@ -21,8 +21,6 @@ files:
 extraResources:
   - from: .env
     to: .env
-  - from: resources/model
-    to: model
   - from: resources/icon.png
     to: icon.png
 # Server代码需要从asar中解压，因为Node.js子进程无法执行asar内的文件

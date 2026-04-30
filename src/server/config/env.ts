@@ -94,27 +94,17 @@ const envSchema = z.object({
 
   /** 工作区路径 */
   WORKSPACE: z.string().min(1),
-  /** 是否启用 TTS (0: 禁用, 1: 启用) */
-  ENABLE_TTS: z.coerce.number().default(0),
   /** 自动插入间隔 (秒) */
   AUTO_INSERT_INTERVAL: z.coerce.number().default(120),
-  /** 摘要更新触发的对话轮数 */
-  SUMMARY_UPDATE_COUNT: z.coerce.number().default(30),
   /** 强制摘要的 token 阈值，超过此值必须触发摘要 */
   SUMMARY_FORCE_TOKEN: z.coerce.number().default(60000),
-  /** 摘要基础阈值，达到此值触发摘要（默认45k） */
-  SUMMARY_BASE_TOKEN: z.coerce.number().default(45000),
   /** 极限阈值，超过此值强制触发摘要（默认100k） */
   EXTREME_THRESHOLD: z.coerce.number().default(100000),
 
   /** 笔记触发阈值（默认20K token） */
   NOTES_TRIGGER_TOKEN: z.coerce.number().default(20000),
-  /** 会话笔记最大大小（默认20K） */
-  NOTES_MAX_SIZE: z.coerce.number().default(20000),
   /** 笔记触发对话轮数（默认15轮） */
   NOTES_TRIGGER_ROUNDS: z.coerce.number().default(15),
-  /** 极限压缩时保留 buffer 尾部比例（默认30%） */
-  BUFFER_TAIL_PERCENT: z.coerce.number().default(30),
   /** 工具保留策略recent距离（距尾部消息数，默认10） */
   TOOL_RETENTION_RECENT_THRESHOLD: z.coerce.number().default(10),
   /** 工具密度触发阈值（0-1，默认0.6） */
@@ -129,21 +119,11 @@ const envSchema = z.object({
   SCENE_BOUNDARY_TIME_GAP_SECONDS: z.coerce.number().default(180),
   /** 场景边界验证-检测窗口大小（轮数，默认5） */
   SCENE_BOUNDARY_WINDOW_SIZE: z.coerce.number().default(5),
-  /** 笔记片段合并阈值（默认3） */
-  SEGMENT_MERGE_THRESHOLD: z.coerce.number().default(3),
-  /** 会话笔记整合触发阈值（token数，默认20k） */
-  SESSION_NODE_MAX_TOKENS: z.coerce.number().default(20000),
-  /** 情感事件最大保留条数（默认30） */
-  EMOTIONAL_EVENTS_MAX: z.coerce.number().default(30),
   /** 场景边界压缩-保留的重叠轮数（默认3） */
   SCENE_BOUNDARY_OVERLAP_ROUNDS: z.coerce.number().default(3),
   /** 碎片记忆保留时间（小时，默认72） */
   FRAGMENT_MEMORY_RETENTION_HOURS: z.coerce.number().default(72),
 
-  /** 摘要后保留的上下文 token 数 */
-  SUMMARY_KEEP_TOKEN: z.coerce.number().default(8000),
-  /** 每个图的最大工具调用次数 */
-  MAX_TOOL_CALLS_PER_GRAPH: z.coerce.number().default(20),
   /** 文件读取最大字符数（同时用于工具响应截断） */
   FILE_READ_MAX_CHARS: z.coerce.number().default(10240),
   /** 文件读取最大行数 */
@@ -152,8 +132,6 @@ const envSchema = z.object({
   FILE_READ_DEFAULT_LIMIT: z.coerce.number().default(500),
   /** 清理超过多少天的旧文件 */
   CLEANUP_OLD_FILES_DAYS: z.coerce.number().default(7),
-  /** 工具调用限制配置 JSON 字符串 */
-  TOOL_CALL_LIMITS: z.string().optional().default('{}'),
   /** TTS 提供商 ('edge', 'dolphin', 'bailian' 或 'minimax') */
   TTS_PROVIDER: z.enum(['edge', 'dolphin', 'bailian', 'minimax']).optional().default('edge'),
   /** Edge TTS 声音名称 */
@@ -190,22 +168,6 @@ const envSchema = z.object({
   MINIMAX_TTS_VOICE: z.string().optional().default('maincommon'),
   /** MiniMax TTS API 地址，默认国内版 api.minimaxi.com */
   MINIMAX_TTS_BASE_URL: z.string().optional().default('https://api.minimaxi.com'),
-  /** 向量嵌入 API 密钥 */
-  EMBEDDING_API_KEY: z.string().optional(),
-  /** 向量嵌入 API 基础 URL */
-  EMBEDDING_API_BASE_URL: z.string().optional().default('http://127.0.0.1:1234'),
-  /** 向量嵌入模型名称 */
-  EMBEDDING_MODEL_NAME: z.string().optional().default('text-embedding-nomic-embed-text-v1.5'),
-  /** 向量嵌入维度 */
-  EMBEDDING_DIMENSION: z.coerce.number().optional().default(768),
-  /** 是否启用向量嵌入 (0: 禁用, 1: 启用) */
-  EMBEDDING_ENABLED: z.coerce.number().default(1),
-  /** 是否启用空闲主动交互 (0: 禁用, 1: 启用) */
-  IDLE_PROACTIVE_ENABLED: z.coerce.number().default(1),
-  /** 空闲主动交互检查间隔 (秒) */
-  IDLE_PROACTIVE_CHECK_INTERVAL: z.coerce.number().default(60),
-  /** 空闲主动交互阈值 (秒) */
-  IDLE_PROACTIVE_THRESHOLD: z.coerce.number().default(60),
   /** Socket 服务器端口 */
   SOCKET_PORT: z.coerce.number().default(9172),
   /** 自定义提示词模板文件路径 */
@@ -269,19 +231,6 @@ mergeConfigPriority()
 
 /** 解析后的环境变量 */
 export const env = envSchema.parse(process.env)
-
-/**
- * 工具调用限制配置
- * 从 TOOL_CALL_LIMITS 环境变量解析得到
- * @deprecated 使用 configManager.get('TOOL_CALL_LIMITS') 配合 JSON.parse 以支持热重载
- */
-export const toolCallLimits: Record<string, number> = (() => {
-  try {
-    return JSON.parse(env.TOOL_CALL_LIMITS)
-  } catch {
-    return {}
-  }
-})()
 
 /**
  * 路径配置对象

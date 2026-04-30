@@ -11,8 +11,6 @@ import { SESSION_NOTES_PROMPT } from './prompt'
 import type { SessionNotes, TaskSkillBinding, RememberOperation, SceneBoundary } from './types'
 import { MessageTokenCounter } from '../../utils/message-token-counter'
 import { SESSION_NODE_CONTEXT } from '../state/context/impl/session-node'
-import { getHybridServer } from '../../socket'
-import { SocketResponseType } from '../../socket/types'
 import { applyRetentionPolicy } from '../../utils/tool-response-parser'
 import { retryWithExponentialBackoff } from '../../utils/retry-utils'
 import { buildCoreMemoryPrompt } from '../../memory/memory-injector'
@@ -23,6 +21,7 @@ import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { hookManager } from '../hook'
+import { vectorMemoryService } from '../../memory'
 
 /** 情感关键词列表，用于检测情感密度 */
 const EMOTIONAL_KEYWORDS = new Set([
@@ -61,10 +60,11 @@ const EMOTIONAL_KEYWORDS = new Set([
 
 /**
  * 检查是否应该触发会话笔记生成
+ * Token触发条件：用户消息 + AI消息 的token数量达到阈值（不包含工具消息）
  */
 const shouldTriggerNotes = (): boolean => {
   const counter = BUFFER_WINDOW_CONTEXT.getCounter()
-  const { totalTokens, roundCount } = counter.getCount()
+  const { totalTokens, roundCount, typeStats } = counter.getCount()
   const notesTriggerRounds = configManager.get('NOTES_TRIGGER_ROUNDS')
   const notesTriggerToken = configManager.get('NOTES_TRIGGER_TOKEN')
   const toolDensityTrigger = configManager.get('TOOL_DENSITY_TRIGGER')
@@ -72,7 +72,9 @@ const shouldTriggerNotes = (): boolean => {
   const densityMinRounds = configManager.get('DENSITY_TRIGGER_MIN_ROUNDS')
 
   const roundsTrigger = roundCount >= notesTriggerRounds
-  const tokenTrigger = totalTokens >= notesTriggerToken
+  // 用户消息 + AI消息的token数量（不包含工具消息）
+  const userAndAiTokens = typeStats.userTokens + typeStats.aiTokens
+  const tokenTrigger = userAndAiTokens >= notesTriggerToken
 
   // 工具密度检测
   const messages = BUFFER_WINDOW_CONTEXT.getMessages()
@@ -102,21 +104,16 @@ const shouldTriggerNotes = (): boolean => {
           ? `工具密度触发(${(toolDensity * 100).toFixed(0)}%)`
           : `情感密度触发(${(emotionalDensity * 100).toFixed(0)}%)`
     logger.info(
-      `[会话笔记] 触发 - ${reason} | tokens: ${totalTokens}/${notesTriggerToken} rounds: ${roundCount}/${notesTriggerRounds}`,
+      `[会话笔记] 触发 - ${reason} | user+ai tokens: ${userAndAiTokens}/${notesTriggerToken} (total: ${totalTokens}) rounds: ${roundCount}/${notesTriggerRounds}`,
     )
   }
 
   return triggered
 }
 
-/**
- * 构建提示词模板
- * 替换模板中的变量
- */
-const buildPrompt = async (messages: BaseMessage[], existingSummary?: string): Promise<string> => {
+export const getTaskPrompt = async () => {
   const allTasksResult = await taskManager.queryTasks(true)
   const allTasks = allTasksResult.tasks || []
-
   let taskInfo: string
   if (allTasks.length === 0) {
     taskInfo = '暂无任务'
@@ -126,12 +123,30 @@ const buildPrompt = async (messages: BaseMessage[], existingSummary?: string): P
     })
     taskInfo = `所有任务(${allTasks.length}个):\n${taskLines.join('\n')}`
   }
+  logger.debug(`[Summary] 任务取回: \n${taskInfo}`)
+  return taskInfo
+}
 
+export const getLongMemoryPrompt = async () => {
+  const coreMemory = await buildCoreMemoryPrompt(true)
+  logger.debug(`[Summary] 核心记忆: ${coreMemory}`)
+  return coreMemory
+}
+
+/**
+ * 构建提示词模板
+ * 替换模板中的变量
+ */
+export const buildPrompt = async (
+  messages: BaseMessage[],
+  taskInfo: string,
+  coreMemory: string,
+  existingSummary?: string,
+): Promise<string> => {
   const notesDesc = existingSummary ? existingSummary : '（无）'
 
-  const coreMemory = (await buildCoreMemoryPrompt(true)) || '无'
   const currentTime = formatDate(new Date())
-  const messagesStr = MessageTokenCounter.formatForLLM(messages)
+  const messagesStr = MessageTokenCounter.formatForLLM(messages, { keepThink: false })
 
   return SESSION_NOTES_PROMPT.replace('{{coreMemory}}', coreMemory)
     .replace('{{rememberPrompt}}', REMEMBER_PROMPT)
@@ -146,10 +161,12 @@ const buildPrompt = async (messages: BaseMessage[], existingSummary?: string): P
  */
 export const generateSessionNotes = async (
   messages: BaseMessage[],
+  taskInfo: string,
+  coreMemory: string,
+  existingSummary?: string,
 ): Promise<SessionNotes | null> => {
   const maxRetryCount = configManager.get('SESSION_NOTES_RETRY_COUNT')
-  const existingSummary = SESSION_NODE_CONTEXT.summary
-  const prompt = await buildPrompt(messages, existingSummary)
+  const prompt = await buildPrompt(messages, taskInfo, coreMemory, existingSummary)
 
   try {
     logger.info(`开始摘要……`)
@@ -162,7 +179,7 @@ export const generateSessionNotes = async (
         ])
         const content = response.content as string
 
-        logger.info(`摘要原文: \n${content}`)
+        logger.debug(`摘要原文: \n${content}`)
 
         // 解析结果
         const result = parseSessionNotes(content)
@@ -293,8 +310,14 @@ const executeRememberOperations = async (operations: RememberOperation[]): Promi
  * 保存笔记审计文件
  * 使用时间戳作为文件名，存储到remember/notes目录
  * @param notes 会话笔记内容
+ * @param firstMessageId 关联的起始消息ID
+ * @param lastMessageId 关联的结束消息ID
  */
-const saveNotesAuditFile = async (notes: SessionNotes): Promise<void> => {
+const saveNotesAuditFile = async (
+  notes: SessionNotes,
+  firstMessageId?: string,
+  lastMessageId?: string,
+): Promise<void> => {
   try {
     const notesDir = join(paths.WORKSPACE_ROOT, 'context', 'remember', 'notes')
 
@@ -310,11 +333,15 @@ const saveNotesAuditFile = async (notes: SessionNotes): Promise<void> => {
     const content = {
       timestamp,
       createdAt: new Date().toISOString(),
+      firstMessageId,
+      lastMessageId,
       notes,
     }
 
     await writeFile(filePath, JSON.stringify(content, null, 2), 'utf-8')
-    logger.info(`[会话笔记] 审计文件已保存: ${filePath}`)
+    logger.info(
+      `[会话笔记] 审计文件已保存: ${filePath}, 消息范围: ${firstMessageId || '无'} - ${lastMessageId || '无'}`,
+    )
   } catch (error) {
     logger.error(`[会话笔记] 保存审计文件失败: ${(error as Error).message}`)
   }
@@ -473,25 +500,6 @@ let processing = false
 let lastSessionNotesContent: string = ''
 
 /**
- * 广播摘要事件到前端
- */
-const broadcastSummaryEvent = (
-  type: string,
-  data: { beforeTokens: number; afterTokens?: number; savedTokens?: number },
-): void => {
-  const server = getHybridServer()
-  if (server) {
-    server.broadcast({
-      code: 200,
-      message: '',
-      type,
-      data,
-      timestamp: Date.now(),
-    })
-  }
-}
-
-/**
  * 执行单个摘要任务
  */
 const processNextSummaryTask = async (): Promise<void> => {
@@ -513,9 +521,6 @@ const processNextSummaryTask = async (): Promise<void> => {
       messageCounter: messageTokenCounter,
     })
 
-    // 广播摘要开始事件
-    broadcastSummaryEvent(SocketResponseType.SUMMARY_START, { beforeTokens: totalTokens })
-
     const messages = messageTokenCounter.getMessages()
     const firstMessageId = messages[0]?.id || ''
     const lastMessageId = messages[messages.length - 1]?.id || ''
@@ -523,7 +528,13 @@ const processNextSummaryTask = async (): Promise<void> => {
       `[会话笔记] 生成笔记，增量token:${totalTokens} 从 ${firstMessageId} 到 ${lastMessageId}`,
     )
 
-    const result = await generateSessionNotes(messages)
+    // 生成会话笔记
+    const result = await generateSessionNotes(
+      messages,
+      await getTaskPrompt(),
+      await getLongMemoryPrompt(),
+      SESSION_NODE_CONTEXT.summary,
+    )
     if (!result) return
 
     // 输出会话笔记全文
@@ -537,7 +548,7 @@ const processNextSummaryTask = async (): Promise<void> => {
     }
 
     // 保存审计文件
-    await saveNotesAuditFile(result)
+    await saveNotesAuditFile(result, firstMessageId, lastMessageId)
 
     // 执行记忆操作（remember）
     if (result.remember && result.remember.length > 0) {
@@ -577,16 +588,19 @@ const processNextSummaryTask = async (): Promise<void> => {
         lastMessageId,
       },
       summaryResult: result,
-    })
-
-    // 广播摘要完成事件
-    broadcastSummaryEvent(SocketResponseType.SUMMARY_COMPLETE, {
       beforeTokens: totalTokens,
       afterTokens,
       savedTokens,
     })
 
     logger.info(`[会话笔记] 生成完成，笔记长度: ${result.notes.length}`)
+
+    // 触发向量记忆强制同步
+    try {
+      await vectorMemoryService.forceSync()
+    } catch (syncErr) {
+      logger.error(syncErr, '[会话笔记] 向量记忆同步失败')
+    }
   } catch (error) {
     logger.error({ error }, `[会话笔记] 生成失败: ${(error as Error).message}`)
   } finally {

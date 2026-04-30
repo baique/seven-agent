@@ -111,6 +111,21 @@ const api = {
       defaultParams: Array<{ id: string; value: number }>
     }> => ipcRenderer.invoke('model:getConfig'),
   },
+  // 截图 IPC 接口
+  screenshot: {
+    capture: (data: {
+      displayId?: number
+      format?: 'png' | 'jpeg'
+      quality?: number
+    }): Promise<{
+      success: boolean
+      base64?: string
+      format?: string
+      width?: number
+      height?: number
+      error?: string
+    }> => ipcRenderer.invoke('screenshot:capture', data),
+  },
   // 配置中心 IPC 接口
   settings: {
     getConfig: (): Promise<{ success: boolean; config?: any; error?: string }> =>

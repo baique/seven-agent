@@ -1,9 +1,9 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import { homedir } from 'node:os'
 import { logger } from '../../utils/logger'
 import { paths } from '../../config/env'
+import { watchWithDebounce } from '../../utils/watch-debounce'
 
 export interface SkillMetadata {
   name: string
@@ -368,40 +368,30 @@ export function clearSkillsCache(): void {
 
 // ==================== 文件监听 ====================
 
-let skillsWatcher: FSWatcher | null = null
-let isWatching = false
+let skillsWatcher: ReturnType<typeof watchWithDebounce> | null = null
 
 /**
  * 监听skills目录变化
  */
 export function startSkillsWatcher(): void {
-  if (isWatching) {
+  if (skillsWatcher) {
     return
   }
 
   const skillsDir = paths.SKILLS_DIR
 
-  try {
-    skillsWatcher = watch(skillsDir, { recursive: true }, (eventType, filename) => {
-      if (!filename) return
-
-      // 只监听SKILL.md文件的变化
-      if (filename.endsWith('SKILL.md')) {
-        logger.info(`[Skills] 检测到文件变化: ${filename} (${eventType})`)
-        clearSkillsCache()
-      }
-    })
-
-    isWatching = true
-    logger.info(`[Skills] 开始监听目录: ${skillsDir}`)
-
-    // 监听错误
-    skillsWatcher.on('error', (error) => {
-      logger.error(`[Skills] 监听出错: ${error}`)
-    })
-  } catch (error) {
-    logger.error(`[Skills] 启动监听失败: ${error}`)
-  }
+  skillsWatcher = watchWithDebounce(
+    skillsDir,
+    () => {
+      logger.info('[Skills] 检测到技能目录变化，重新加载')
+      clearSkillsCache()
+    },
+    {
+      debounceMs: 500,
+      recursive: true,
+      filter: (filename) => filename.endsWith('SKILL.md'),
+    },
+  )
 }
 
 /**
@@ -409,9 +399,8 @@ export function startSkillsWatcher(): void {
  */
 export function stopSkillsWatcher(): void {
   if (skillsWatcher) {
-    skillsWatcher.close()
+    skillsWatcher.stop()
     skillsWatcher = null
-    isWatching = false
     logger.info('[Skills] 已停止监听')
   }
 }

@@ -385,5 +385,12 @@ export function registerSocketHandlers(handler: SocketHandler): void {
     return ResponseBuilder.success({ data: reviewData }, 'ok', request.requestId)
   })
 
+  // 截图结果 - 由 screenshot.ts 工具直接监听 WebSocket 消息处理
+  // 这里注册空 handler 避免 "Unknown command" 错误
+  handler.register('screenshot:result', async (_data, _request) => {
+    // 不返回任何内容，由 screenshot.ts 中的 socket.on('message') 监听器处理
+    return null
+  })
+
   logger.info('[Handlers] 所有Socket命令处理器已注册')
 }

@@ -49,6 +49,18 @@ export interface AddMessageResult {
   toolCallIds: string[]
 }
 
+/** 消息类型 Token 统计 */
+export interface MessageTypeStats {
+  /** 用户消息 token 数量 */
+  userTokens: number
+  /** AI消息 token 数量 */
+  aiTokens: number
+  /** 工具消息 token 数量 */
+  toolTokens: number
+  /** 总 token 数量 */
+  totalTokens: number
+}
+
 /** 消息计数结果 */
 export interface CountResult {
   /** 原始 token 总数 */
@@ -59,6 +71,8 @@ export interface CountResult {
   messageCount: number
   /** 轮数（HumanMessage 数量） */
   roundCount: number
+  /** 消息类型统计 */
+  typeStats: MessageTypeStats
 }
 
 /** 截断结果，包含选中消息和剩余消息 */
@@ -79,6 +93,8 @@ export interface TruncateResult {
 export interface FormatOptions {
   /** Tool 消息最大行数，超过则截断 */
   toolMaxLines?: number
+  /** 是否保留 think 标签内容，默认 true */
+  keepThink?: boolean
 }
 
 /**
@@ -202,6 +218,12 @@ export class MessageTokenCounter {
   private toolMaxLines: number
   /** 是否有未配对的 HumanMessage（等待 AI 回复） */
   private hasPendingHumanMessage: boolean = false
+  /** 用户消息 token 数量 */
+  private userTokens: number = 0
+  /** AI消息 token 数量 */
+  private aiTokens: number = 0
+  /** 工具消息 token 数量 */
+  private toolTokens: number = 0
 
   constructor(options?: { toolMaxLines?: number }) {
     this.toolMaxLines = options?.toolMaxLines ?? 300
@@ -223,6 +245,7 @@ export class MessageTokenCounter {
         this.hasPendingHumanMessage = true
       }
       this.pendingToolCallIds = []
+      this.userTokens += rawTokens
     } else if (AIMessage.isInstance(msg)) {
       // AI 消息回复，如果前面有未配对的 HumanMessage，则完成一轮
       if (this.hasPendingHumanMessage) {
@@ -235,12 +258,14 @@ export class MessageTokenCounter {
           .map((tc) => tc.id)
           .filter((id): id is string => id !== undefined)
       }
+      this.aiTokens += rawTokens
     } else if (ToolMessage.isInstance(msg)) {
       // Tool 消息，匹配对应的 tool_call_id
       const idx = this.pendingToolCallIds.indexOf(msg.tool_call_id)
       if (idx !== -1) {
         this.pendingToolCallIds.splice(idx, 1)
       }
+      this.toolTokens += rawTokens
     }
 
     this.messages.push(msg)
@@ -275,13 +300,41 @@ export class MessageTokenCounter {
       truncatedTokens: this.truncatedTokens,
       messageCount: this.messages.length,
       roundCount: this.rounds,
+      typeStats: {
+        userTokens: this.userTokens,
+        aiTokens: this.aiTokens,
+        toolTokens: this.toolTokens,
+        totalTokens: this.userTokens + this.aiTokens + this.toolTokens,
+      },
     }
   }
 
-  setState(state: { tokens: number; truncatedTokens: number; rounds: number }): void {
+  /**
+   * 获取消息类型 Token 统计
+   */
+  getTypeStats(): MessageTypeStats {
+    return {
+      userTokens: this.userTokens,
+      aiTokens: this.aiTokens,
+      toolTokens: this.toolTokens,
+      totalTokens: this.userTokens + this.aiTokens + this.toolTokens,
+    }
+  }
+
+  setState(state: {
+    tokens: number
+    truncatedTokens: number
+    rounds: number
+    userTokens?: number
+    aiTokens?: number
+    toolTokens?: number
+  }): void {
     this.tokens = state.tokens
     this.truncatedTokens = state.truncatedTokens
     this.rounds = state.rounds
+    if (state.userTokens !== undefined) this.userTokens = state.userTokens
+    if (state.aiTokens !== undefined) this.aiTokens = state.aiTokens
+    if (state.toolTokens !== undefined) this.toolTokens = state.toolTokens
   }
 
   setMessages(messages: BaseMessage[]): void {
@@ -301,10 +354,14 @@ export class MessageTokenCounter {
     this.rounds = 0
     this.pendingToolCallIds = []
     this.hasPendingHumanMessage = false
+    this.userTokens = 0
+    this.aiTokens = 0
+    this.toolTokens = 0
 
     // 重新计算
     for (const msg of this.messages) {
-      this.tokens += countSingleMessageTokens(msg)
+      const rawTokens = countSingleMessageTokens(msg)
+      this.tokens += rawTokens
       this.truncatedTokens += countTruncatedMessageTokens(msg, this.toolMaxLines)
 
       if (HumanMessage.isInstance(msg)) {
@@ -312,6 +369,7 @@ export class MessageTokenCounter {
           this.hasPendingHumanMessage = true
         }
         this.pendingToolCallIds = []
+        this.userTokens += rawTokens
       } else if (AIMessage.isInstance(msg)) {
         if (this.hasPendingHumanMessage) {
           this.rounds++
@@ -322,11 +380,13 @@ export class MessageTokenCounter {
             .map((tc) => tc.id)
             .filter((id): id is string => id !== undefined)
         }
+        this.aiTokens += rawTokens
       } else if (ToolMessage.isInstance(msg)) {
         const idx = this.pendingToolCallIds.indexOf(msg.tool_call_id)
         if (idx !== -1) {
           this.pendingToolCallIds.splice(idx, 1)
         }
+        this.toolTokens += rawTokens
       }
     }
   }
@@ -341,6 +401,9 @@ export class MessageTokenCounter {
     this.rounds = 0
     this.pendingToolCallIds = []
     this.hasPendingHumanMessage = false
+    this.userTokens = 0
+    this.aiTokens = 0
+    this.toolTokens = 0
   }
 
   /**
@@ -767,12 +830,16 @@ export class MessageTokenCounter {
    */
   static formatForLLM(messages: BaseMessage[], options?: FormatOptions): string {
     const maxLines = options?.toolMaxLines ?? 300
+    const keepThink = options?.keepThink ?? true
 
     const formattedMessages = messages.map((msg, msgIdx) => {
       if (ToolMessage.isInstance(msg)) {
         const contentStr =
           typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-        const truncated = removeThinkTags(truncateToolContent(contentStr, maxLines))
+        let truncated = truncateToolContent(contentStr, maxLines)
+        if (!keepThink) {
+          truncated = removeThinkTags(truncated)
+        }
         return {
           role: 'tool',
           toolName: msg.name || 'unknown',
@@ -784,11 +851,15 @@ export class MessageTokenCounter {
 
       const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
       const isHuman = msg.constructor.name === 'HumanMessage'
+      let content = contentStr
+      if (!keepThink) {
+        content = removeThinkTags(contentStr)
+      }
 
       return {
         id: msg.id,
         role: isHuman ? 'user' : 'ai',
-        content: removeThinkTags(contentStr),
+        content,
       }
     })
 

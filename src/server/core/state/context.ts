@@ -5,7 +5,7 @@ import { ContextBuilder } from './context/context-builder'
 import { SYSTEM } from './context/impl/system'
 import { TASK_CONTEXT } from './context/impl/task'
 import { SESSION_NODE_CONTEXT } from './context/impl/session-node'
-import { BUFFER_WINDOW_CONTEXT } from './context/impl/buffer-window'
+import { BUFFER_WINDOW_CONTEXT, BufferWindowContextBuilder } from './context/impl/buffer-window'
 import { STATE_CONTEXT } from './context/impl/character-state'
 import { SKILL_CONTEXT } from './context/impl/skill-context'
 import { MessageTokenCounter } from '../../utils/message-token-counter'
@@ -105,40 +105,50 @@ function compatHistoryToolCalls(messages: BaseMessage[]): BaseMessage[] {
 export class Context {
   private _contextCache: Record<string, BaseMessage[]> = {}
   private _rawUsage?: Record<string, unknown>
-  private contextBuilder: ContextBuilder[]
+  private contextBuilder?: ContextBuilder[]
 
   constructor() {
     // 延迟初始化 contextBuilder，避免循环依赖问题
-    this.contextBuilder = [
-      SYSTEM.SYSTEM_CONTEXT,
-      SKILL_CONTEXT,
-      SYSTEM.DAY_SUMMARY_CONTEXT,
-      SYSTEM.LONG_MEMORY_CONTEXT,
-      STATE_CONTEXT,
-      TASK_CONTEXT,
-      SESSION_NODE_CONTEXT,
-      BUFFER_WINDOW_CONTEXT,
-    ]
   }
 
   public async init() {
+    if (!this.contextBuilder) {
+      this.contextBuilder = [
+        SYSTEM.SYSTEM_CONTEXT,
+        SKILL_CONTEXT,
+        SYSTEM.DAY_SUMMARY_CONTEXT,
+        SYSTEM.LONG_MEMORY_CONTEXT,
+        STATE_CONTEXT,
+        TASK_CONTEXT,
+        SESSION_NODE_CONTEXT,
+        BUFFER_WINDOW_CONTEXT,
+      ]
+    }
     await this.contextBuilder.forEach((builder) => builder.init())
   }
 
   public async persistContext(): Promise<void> {
-    await this.contextBuilder.forEach((builder) => builder.persist())
+    await this.contextBuilder!.forEach((builder) => builder.persist())
   }
 
   /**
    * 构建完整消息上下文
    * @param messages  消息列表
+   * @param customBufferMessage  自定义缓冲列表，用于替换上下文范围
    * @returns  完整消息上下文
    */
-  public async createMessageContext(messages: BaseMessage[]): Promise<BaseMessage[]> {
+  public async createMessageContext(
+    messages: BaseMessage[],
+    customBufferMessage: BaseMessage[] = [],
+  ): Promise<BaseMessage[]> {
     const fullMessages: BaseMessage[] = []
 
-    for (const inst of this.contextBuilder) {
+    for (const inst of this.contextBuilder!) {
       const typeName = inst.constructor.name
+      if (inst instanceof BufferWindowContextBuilder && customBufferMessage.length > 0) {
+        fullMessages.push(...customBufferMessage)
+        continue
+      }
       const beginLength = fullMessages.length
 
       if ('cache' in inst && typeof inst.cache === 'function' && inst.cache()) {

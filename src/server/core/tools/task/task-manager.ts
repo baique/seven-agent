@@ -82,20 +82,9 @@ export class TaskManager {
   private data: TaskData | null = null
   private saveLock: Promise<void> = Promise.resolve()
   private readonly tasksFilePath: string
-  private broadcastCallback: ((event: string, data: unknown) => void) | null = null
 
   constructor() {
     this.tasksFilePath = path.join(paths.WORKSPACE_ROOT, 'context', 'tasks.json')
-  }
-
-  setBroadcastCallback(callback: (event: string, data: unknown) => void): void {
-    this.broadcastCallback = callback
-  }
-
-  private broadcast(event: string, data: unknown): void {
-    if (this.broadcastCallback) {
-      this.broadcastCallback(event, data)
-    }
   }
 
   /**
@@ -217,7 +206,6 @@ export class TaskManager {
         await this.saveData()
 
         logger.info(`[TaskManager] 创建任务: ${taskInput.name}`)
-        this.broadcast('task:updated', { tasks: data.tasks })
 
         results.push({
           success: true,
@@ -261,7 +249,6 @@ export class TaskManager {
 
       await this.saveData()
       logger.info(`[TaskManager] 任务 "${taskId}" 状态更新为 ${newStatus}`)
-      this.broadcast('task:updated', { tasks: data.tasks })
 
       return {
         success: true,
@@ -319,7 +306,6 @@ export class TaskManager {
       await this.saveData()
 
       logger.info(`[TaskManager] 删除任务 "${taskId}"`)
-      this.broadcast('task:updated', { tasks: data.tasks })
 
       return {
         success: true,

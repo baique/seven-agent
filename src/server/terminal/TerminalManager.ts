@@ -3,6 +3,8 @@ import { readFileContent } from '../core/tools/filesystem/read-file'
 import { logger } from '../utils'
 import { TerminalSession, OutputCallback, StatusCallback, SessionStatus } from './TerminalSession'
 import { validateCommand } from './commandSecurity'
+import { getHybridServer } from '../socket'
+import { SocketResponseType } from '../socket/types'
 
 export interface CreateSessionResult {
   sessionId: string
@@ -14,52 +16,67 @@ export interface ExecResult {
   currentContent?: string
 }
 
-export type BroadcastCallback = (event: string, data: unknown) => void
-
 export class TerminalManager {
   private sessions: Map<string, TerminalSession> = new Map()
 
   private sessionCounter: number = 0
   private defaultSessionId: string | null = null
-  private broadcastCallback: BroadcastCallback | null = null
   private defaultCwd: string = process.env.WORKSPACE || process.cwd()
-
-  setBroadcastCallback(callback: BroadcastCallback | null): void {
-    this.broadcastCallback = callback
-  }
-
-  private broadcast(event: string, data: unknown): void {
-    if (this.broadcastCallback) {
-      this.broadcastCallback(event, data)
-    }
-  }
-
-  private createSessionOutputCallback(): OutputCallback {
-    return (sessionId: string, data: string) => {
-      this.broadcast('terminal:output', { sessionId, data })
-    }
-  }
-
-  private createSessionStatusCallback(): StatusCallback {
-    return (sessionId: string, status: SessionStatus) => {
-      this.broadcast('terminal:status_changed', { sessionId, status })
-    }
-  }
 
   async createSession(sessionId: string, cwd?: string): Promise<CreateSessionResult> {
     if (this.sessions.has(sessionId)) {
       return { sessionId }
     }
-    const callback = this.createSessionOutputCallback()
     const sessionCwd = cwd || this.defaultCwd
-    const session = new TerminalSession(sessionId, sessionCwd, callback)
+
+    // 创建输出回调，广播终端输出到所有连接的客户端
+    const outputCallback: OutputCallback = (sid: string, data: string) => {
+      const server = getHybridServer()
+      if (server) {
+        server.broadcast({
+          code: 200,
+          message: '',
+          type: SocketResponseType.TERMINAL_OUTPUT,
+          data: { sessionId: sid, data },
+          timestamp: Date.now(),
+        })
+      }
+    }
+
+    // 创建状态回调，广播终端状态变更到所有连接的客户端
+    const statusCallback: StatusCallback = (sid: string, status: SessionStatus) => {
+      const server = getHybridServer()
+      if (server) {
+        server.broadcast({
+          code: 200,
+          message: '',
+          type: SocketResponseType.TERMINAL_STATUS_CHANGED,
+          data: { sessionId: sid, status },
+          timestamp: Date.now(),
+        })
+      }
+    }
+
+    const session = new TerminalSession(sessionId, sessionCwd, outputCallback)
+    session.setStatusCallback(statusCallback)
     await session.initPty('cmd.exe')
-    session.setStatusCallback(this.createSessionStatusCallback())
     this.sessions.set(sessionId, session)
     if (!this.defaultSessionId) {
       this.defaultSessionId = sessionId
     }
-    this.broadcast('terminal:session_created', { sessionId })
+
+    // 广播会话创建事件
+    const server = getHybridServer()
+    if (server) {
+      server.broadcast({
+        code: 200,
+        message: '',
+        type: SocketResponseType.TERMINAL_SESSION_CREATED,
+        data: { sessionId },
+        timestamp: Date.now(),
+      })
+    }
+
     return { sessionId }
   }
 
@@ -141,10 +158,21 @@ export class TerminalManager {
     if (session) {
       session.destroy()
       this.sessions.delete(sessionId)
-      this.broadcast('terminal:session_closed', { sessionId })
     }
     if (this.defaultSessionId === sessionId) {
       this.defaultSessionId = this.sessions.keys().next().value || null
+    }
+
+    // 广播会话关闭事件
+    const server = getHybridServer()
+    if (server) {
+      server.broadcast({
+        code: 200,
+        message: '',
+        type: SocketResponseType.TERMINAL_SESSION_CLOSED,
+        data: { sessionId },
+        timestamp: Date.now(),
+      })
     }
   }
 

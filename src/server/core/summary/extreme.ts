@@ -7,8 +7,7 @@ import { MessageTokenCounter } from '../../utils/message-token-counter'
 import { processSessionMessages, waitAllQueue } from '.'
 import { CTX } from '../state/context'
 import { SESSION_NODE_CONTEXT } from '../state/context/impl/session-node'
-import { getHybridServer } from '../../socket'
-import { SocketResponseType } from '../../socket/types'
+import { hookManager } from '../hook'
 
 /**
  * 获取需要保护的消息索引（最后一个AIMessage的位置）
@@ -80,22 +79,31 @@ const cleanupAllToolResults = (messagesToClean: BaseMessage[]): number => {
 }
 
 /**
- * 广播极限压缩事件到前端
+ * 触发极限压缩完成hook
  */
-const broadcastExtremeEvent = (
-  type: string,
-  data: { beforeTokens: number; afterTokens?: number; savedTokens?: number },
-): void => {
-  const server = getHybridServer()
-  if (server) {
-    server.broadcast({
-      code: 200,
-      message: '',
-      type,
-      data,
-      timestamp: Date.now(),
-    })
+const emitExtremeCompressionHook = (beforeTokens: number, afterTokens: number): void => {
+  const savedTokens = beforeTokens - afterTokens
+  const messageCounter = new MessageTokenCounter()
+  const messages = BUFFER_WINDOW_CONTEXT.getMessages()
+  for (const msg of messages) {
+    messageCounter.addMessage(msg)
   }
+  hookManager.emit('afterSummary' as const, {
+    messageCounter,
+    sessionInfo: {
+      summary: SESSION_NODE_CONTEXT.summary,
+      lastMessageId: SESSION_NODE_CONTEXT.lastMessageId || '',
+    },
+    summaryResult: {
+      notes: SESSION_NODE_CONTEXT.summary,
+      taskSkillBindings: [],
+      rememberOperations: [],
+      sceneBoundary: undefined,
+    },
+    beforeTokens,
+    afterTokens,
+    savedTokens,
+  })
 }
 
 /**
@@ -119,8 +127,6 @@ export const handleExtremeContext = async (force?: boolean): Promise<boolean> =>
     logger.warn(`[极限压缩] token ${totalTokens} 超过阈值 ${extremeThreshold}`)
   }
 
-  broadcastExtremeEvent(SocketResponseType.SUMMARY_START, { beforeTokens: totalTokens })
-
   // 等待所有待处理摘要完成
   await waitAllQueue()
 
@@ -137,11 +143,7 @@ export const handleExtremeContext = async (force?: boolean): Promise<boolean> =>
   let currentTokens = MessageTokenCounter.countMessages(BUFFER_WINDOW_CONTEXT.getMessages())
   logger.info(`[极限压缩] L1后token: ${currentTokens}`)
   if (currentTokens <= targetTokens) {
-    broadcastExtremeEvent(SocketResponseType.SUMMARY_COMPLETE, {
-      beforeTokens: totalTokens,
-      afterTokens: currentTokens,
-      savedTokens: totalTokens - currentTokens,
-    })
+    emitExtremeCompressionHook(totalTokens, currentTokens)
     return true
   }
 
@@ -150,11 +152,7 @@ export const handleExtremeContext = async (force?: boolean): Promise<boolean> =>
   currentTokens = MessageTokenCounter.countMessages(BUFFER_WINDOW_CONTEXT.getMessages())
   logger.info(`[极限压缩] L2后token: ${currentTokens}`)
   if (currentTokens <= targetTokens) {
-    broadcastExtremeEvent(SocketResponseType.SUMMARY_COMPLETE, {
-      beforeTokens: totalTokens,
-      afterTokens: currentTokens,
-      savedTokens: totalTokens - currentTokens,
-    })
+    emitExtremeCompressionHook(totalTokens, currentTokens)
     return true
   }
 
@@ -174,8 +172,7 @@ export const handleExtremeContext = async (force?: boolean): Promise<boolean> =>
     const afterLastProcessMsgs = removedMessages.slice(lastProcessMsgIndex + 1)
     if (afterLastProcessMsgs.length > 0) {
       logger.info(`[极限压缩-L3] 紧急摘要 ${afterLastProcessMsgs.length} 条未摘要消息`)
-      // 极限摘要时使用更大的拆分阈值 50k，减少拆分次数
-      await processSessionMessages(afterLastProcessMsgs, 50000)
+      await processSessionMessages(afterLastProcessMsgs)
       await waitAllQueue()
     }
   }
@@ -187,11 +184,7 @@ export const handleExtremeContext = async (force?: boolean): Promise<boolean> =>
   const finalTokens = MessageTokenCounter.countMessages(BUFFER_WINDOW_CONTEXT.getMessages())
   logger.info(`[极限压缩] L3后token: ${finalTokens}`)
 
-  broadcastExtremeEvent(SocketResponseType.SUMMARY_COMPLETE, {
-    beforeTokens: totalTokens,
-    afterTokens: finalTokens,
-    savedTokens: totalTokens - finalTokens,
-  })
+  emitExtremeCompressionHook(totalTokens, finalTokens)
 
   return true
 }

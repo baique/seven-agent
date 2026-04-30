@@ -396,14 +396,14 @@ export class MessageProcessor {
 
     if (pendingItem) {
       // 追加到现有pending消息末尾
-      pendingItem.content += `\n\n[system_note]\n${content}`
+      pendingItem.content += `\n\n[system]\n${content}\n[system]`
       logger.info(`[MessageProcessor] 系统通知已注入到消息 <${pendingItem.id}>`)
     } else {
       // 新建一条消息
       const id = this.generateMessageId()
       const queueItem: QueueMessage = {
         id,
-        content: `[system_note]\n${content}`,
+        content: `[system]\n${content}\n[system]`,
         status: 'pending',
         timestamp: Date.now(),
         resolve: () => {},

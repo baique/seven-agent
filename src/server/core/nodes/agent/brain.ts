@@ -2,6 +2,7 @@ import { logger } from '../../../utils'
 import { StreamPrimaryPersonModel } from '../../model'
 import { AIMessage, BaseMessage } from '@langchain/core/messages'
 import { coreTools } from '../../tools/tools-collection'
+import { getModelConfigManager } from '../../../config/model-config'
 
 /**
  * LLM 调用结果
@@ -9,8 +10,8 @@ import { coreTools } from '../../tools/tools-collection'
 export interface BrainSpeakResult {
   /** AI 消息 */
   message: AIMessage
-  /** Token 使用统计（原始 usage_metadata + 耗时） */
-  usage?: Record<string, unknown> & { elapsedMs: number }
+  /** Token 使用统计（原始 usage_metadata + 耗时 + 模型名称） */
+  usage?: Record<string, unknown> & { elapsedMs: number; modelName: string }
 }
 
 logger.info(`[Brain] 绑定 ${coreTools.length} 个核心工具`)
@@ -46,10 +47,20 @@ export const BrainSpeak = async (
     const usage = result?.usage_metadata
     let usageData: BrainSpeakResult['usage'] | undefined
 
+    // 从 LLM 响应中获取实际使用的模型名称，如果没有则使用配置的主模型名称
+    const responseMetadata = (result as any)?.response_metadata
+    const modelManager = getModelConfigManager()
+    const modelName =
+      responseMetadata?.model ||
+      responseMetadata?.model_name ||
+      modelManager?.getPrimaryName() ||
+      'unknown'
+
     if (usage) {
       usageData = {
         ...usage,
         elapsedMs: elapsed,
+        modelName,
       }
     }
 

@@ -31,20 +31,10 @@ export const TaskToolNode: GraphNode<typeof MessagesState> = async (state) => {
     return { messages: [] }
   }
 
-  logger.info(`[ToolNode] 准备执行 ${toolCalls.length} 个工具调用`)
-
   const reviewManager = getReviewManager()
   const cancelManager = getChatCancelManager()
   const socket = state.requestId ? cancelManager.getSocket(state.requestId) : undefined
   const results: ToolMessage[] = []
-
-  // 获取最后一条用户消息用于Hook
-  const lastUserMessage = state.messages
-    .slice()
-    .reverse()
-    .find((m) => HumanMessage.isInstance(m))
-  const userMessageContent =
-    typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : ''
 
   for (const toolCall of toolCalls) {
     if (state.cancelled) {
@@ -129,9 +119,8 @@ export const TaskToolNode: GraphNode<typeof MessagesState> = async (state) => {
       // 触发工具调用前Hook（通用Hook先执行，然后执行工具特定Hook）
       await hookManager.emitToolHook('beforeToolCall' as const, {
         socket,
-        message: userMessageContent,
+        message: lastMessage,
         state,
-        llmResponse: lastMessage,
         toolName: toolCall.name,
         toolArgs: toolCall.args as Record<string, unknown>,
         requestId: state.requestId || '',
@@ -142,9 +131,8 @@ export const TaskToolNode: GraphNode<typeof MessagesState> = async (state) => {
       // 触发工具调用后Hook（通用Hook先执行，然后执行工具特定Hook）
       await hookManager.emitToolHook('afterToolCall' as const, {
         socket,
-        message: userMessageContent,
+        message: lastMessage,
         state,
-        llmResponse: lastMessage,
         toolName: toolCall.name,
         toolArgs: toolCall.args as Record<string, unknown>,
         toolResponse: observation,
@@ -154,10 +142,24 @@ export const TaskToolNode: GraphNode<typeof MessagesState> = async (state) => {
       results.push(observation)
     } catch (e: any) {
       logger.error({ error: e.message, toolName: toolCall.name }, '[TaskAgent] 工具执行失败')
+
+      const errorMessage = `执行失败: ${e.message || e}`
+
+      // 触发工具调用后Hook（失败情况）
+      await hookManager.emitToolHook('afterToolCall' as const, {
+        socket,
+        message: lastMessage,
+        state,
+        toolName: toolCall.name,
+        toolArgs: toolCall.args as Record<string, unknown>,
+        error: errorMessage,
+        requestId: state.requestId || '',
+      })
+
       results.push(
         new ToolMessage({
           tool_call_id: toolCall.id ?? '',
-          content: `执行失败: ${e.message || e}`,
+          content: errorMessage,
           status: 'error',
         }),
       )

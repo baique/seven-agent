@@ -200,6 +200,39 @@ const connect = async (port: number) => {
     },
   )
 
+  // 处理截图请求 - 通过 IPC 调用主进程 desktopCapturer
+  socketHandler.register(
+    'screenshot:request',
+    async (
+      res: SocketResponse<{ displayId?: number; format?: 'png' | 'jpeg'; quality?: number }> & {
+        requestId?: string
+      },
+    ) => {
+      if (!res.data) return
+      const requestId = (res as any).requestId
+      try {
+        const result = await window.api.screenshot.capture({
+          displayId: res.data.displayId,
+          format: res.data.format || 'jpeg',
+          quality: res.data.quality || 75,
+        })
+
+        // 通过 socket 返回结果给 Server
+        client.value?.send({
+          command: 'screenshot:result',
+          data: result,
+          requestId: requestId || `screenshot-${Date.now()}`,
+        } as any)
+      } catch (error: any) {
+        client.value?.send({
+          command: 'screenshot:result',
+          data: { success: false, error: error.message },
+          requestId: requestId || `screenshot-${Date.now()}`,
+        } as any)
+      }
+    },
+  )
+
   // 连接成功后同步后台状态
   syncLoadingState()
 }

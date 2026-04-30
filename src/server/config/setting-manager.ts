@@ -7,6 +7,7 @@ import { EventEmitter } from 'events'
 import fs from 'node:fs'
 import path from 'node:path'
 import { logger } from '../utils/logger'
+import { debounce } from '../utils/watch-debounce'
 
 /** 截断模式 */
 export type TrimMode = 'head' | 'tail' | 'summary' | 'structure'
@@ -277,12 +278,19 @@ class SettingManager extends EventEmitter {
         this.save()
       }
 
-      fs.watchFile(this.configPath, { interval: 1000 }, (curr, prev) => {
-        if (curr.mtime.getTime() !== prev.mtime.getTime()) {
+      const debouncedReload = debounce(
+        () => {
           logger.info('[SettingManager] 检测到配置文件变化，重新加载')
           const oldConfig = { ...this.currentConfig }
           this.load()
           this.emit('change', { oldConfig, newConfig: this.currentConfig })
+        },
+        { debounceMs: 500 },
+      )
+
+      fs.watchFile(this.configPath, { interval: 1000 }, (curr, prev) => {
+        if (curr.mtime.getTime() !== prev.mtime.getTime()) {
+          debouncedReload()
         }
       })
 

@@ -1,13 +1,16 @@
 import 'dotenv/config'
 import { createHybridServer, isPortInUse } from './socket'
-import { logger } from './utils/logger'
+import { logger, syncLogLevelWithEnv } from './utils/logger'
 import { env, configManager } from './config/env'
+
+// 同步日志级别与环境变量，确保 LOG_LEVEL 配置生效
+syncLogLevelWithEnv()
 import { settingManager } from './config/setting-manager'
 import { initWorkspace } from './utils/workspace'
 import { startLongTermSummaryScheduler } from './scheduler/long-term-summary'
 import { scheduler, startCleanupScheduler } from './scheduler'
 import { startReminderChecker } from './scheduler/reminder-checker'
-import { jsonMemoryManager } from './memory'
+import { jsonMemoryManager, vectorMemoryService } from './memory'
 import { terminalManagerSingleton } from './terminal'
 import { taskManager } from './core/tools/task/task-manager'
 import { BUFFER_WINDOW_CONTEXT } from './core/state/context/impl/buffer-window'
@@ -165,7 +168,7 @@ async function cleanup(): Promise<void> {
   }
 
   try {
-    terminalManager.destroyAll()
+    terminalManagerSingleton.destroyAll()
     logger.info('[Cleanup] 终端会话已销毁')
   } catch (error) {
     logger.error({ error }, '[Cleanup] 销毁终端会话失败')
@@ -198,40 +201,6 @@ async function cleanup(): Promise<void> {
   logger.info('[Cleanup] 资源清理完成')
 }
 
-// 终端管理器单例
-const terminalManager = terminalManagerSingleton
-terminalManager.setBroadcastCallback((event: string, data: unknown) => {
-  hybridServer.broadcast({
-    code: 200,
-    message: '',
-    type: event,
-    data,
-    timestamp: Date.now(),
-  })
-})
-
-// 任务管理器广播
-taskManager.setBroadcastCallback((event: string, data: unknown) => {
-  hybridServer.broadcast({
-    code: 200,
-    message: '',
-    type: event,
-    data,
-    timestamp: Date.now(),
-  })
-})
-
-// 人格状态管理器广播
-STATE_CONTEXT.setBroadcastCallback((event: string, data: unknown) => {
-  hybridServer.broadcast({
-    code: 200,
-    message: '',
-    type: event,
-    data,
-    timestamp: Date.now(),
-  })
-})
-
 /**
  * 启动Server
  * 可以被主进程调用，也可以独立运行
@@ -252,6 +221,25 @@ export async function startServer(): Promise<void> {
       '[Server] 工作空间初始化失败',
     )
     throw error
+  }
+
+  // 初始化向量记忆服务
+  try {
+    await vectorMemoryService.initialize({
+      vectorDimensions: 768,
+      embedding: {
+        local: {
+          enabled: true,
+          dimensions: 768,
+        },
+        remote: {
+          enabled: false,
+        },
+      },
+    })
+  } catch (err) {
+    logger.error(err, '[Server] 向量记忆服务初始化失败，将继续使用传统记忆系统')
+    // 不抛出错误，允许服务继续启动
   }
 
   // 注册系统级Hook

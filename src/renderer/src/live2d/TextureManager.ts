@@ -96,6 +96,8 @@ export class TextureManager {
       },
       { passive: true },
     )
+    // 设置跨域属性，允许 WebGL 加载图片
+    img.crossOrigin = 'anonymous'
     img.src = fileName
   }
 

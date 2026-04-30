@@ -26,6 +26,11 @@
 import BeforeLLMConsumeBuffer from './before-llm-consume-buffer'
 import AfterLLMStatsLogger from './after-llm-stats-logger'
 import AutoInsertTimeGap from './auto-insert-time-gap'
+import BeforeRequestRetentionPolicy from './before-request-retention-policy'
+import AfterToolCallPersonalityUpdate from './after-tool-call-personality-update'
+import AfterToolCallTerminal from './after-tool-call-terminal'
+import AfterToolCallTask from './after-tool-call-task'
+import AfterSummary from './after-summary'
 import type { MessagesState } from '../state/llm-state'
 
 export { hookManager, hooks, HookManager } from './hook-manager'
@@ -53,6 +58,10 @@ import { hooks } from './hook-manager'
  * 在server启动时调用，用于注册内置的系统Hook
  */
 export function registerSystemHooks(): void {
+  hooks.beforeRequest(() => {
+    BeforeRequestRetentionPolicy()
+  })
+
   hooks.beforeLLM(({ state }) => {
     AutoInsertTimeGap(state as typeof MessagesState.State)
     BeforeLLMConsumeBuffer(state as typeof MessagesState.State)
@@ -60,5 +69,15 @@ export function registerSystemHooks(): void {
 
   hooks.afterLLM((params) => {
     AfterLLMStatsLogger(params)
+  })
+
+  hooks.afterToolCall((params) => {
+    AfterToolCallPersonalityUpdate(params)
+    AfterToolCallTerminal(params)
+    AfterToolCallTask(params)
+  })
+
+  hooks.afterSummary((params) => {
+    AfterSummary(params)
   })
 }

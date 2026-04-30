@@ -8,6 +8,7 @@ import { paths } from '../config/env'
 import { logger } from '../utils/logger'
 import { ensureDir } from '../utils/workspace'
 import { nanoid } from 'nanoid'
+import { vectorMemoryService } from './vector-memory-service'
 
 /** 碎片记忆项 */
 export interface FragmentMemory {
@@ -187,6 +188,11 @@ export class JsonMemoryManager {
       // 保存
       await this.writeJsonFile(filePath, memories)
 
+      // 触发向量记忆异步同步
+      if (vectorMemoryService.isInitialized()) {
+        vectorMemoryService.asyncSync(filePath)
+      }
+
       logger.info(`[JsonMemoryManager] 添加碎片记忆: ${memory.id}, 重要性: ${memory.importance}`)
       return memory
     })
@@ -269,6 +275,11 @@ export class JsonMemoryManager {
 
       memories.push(memory)
       await this.writeJsonFile(filePath, memories)
+
+      // 触发向量记忆异步同步
+      if (vectorMemoryService.isInitialized()) {
+        vectorMemoryService.asyncSync(filePath)
+      }
 
       logger.info(`[JsonMemoryManager] 添加长期记忆: ${memory.id}, 重要性: ${memory.importance}`)
       return memory

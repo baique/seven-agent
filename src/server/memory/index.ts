@@ -4,6 +4,7 @@ import { ensureDir, ensureFile } from '../utils/workspace'
 import { logger, formatDate, formatDateDisplay } from '../utils'
 import { paths, configManager } from '../config/env'
 import { jsonMemoryManager } from './json-memory-manager'
+import { vectorMemoryService } from './vector-memory-service'
 
 export interface MemoryMessage {
   id: string
@@ -73,7 +74,9 @@ export class Memory {
             })
           }
         }
-      } catch (error) {}
+      } catch (error) {
+        logger.error(`[Memory] 读取 ${dateStr} 摘要失败: ${error}`)
+      }
     }
 
     const todayDir = join(this.workspaceRoot, 'memory', todayStr)
@@ -159,7 +162,9 @@ export class Memory {
             })
           }
         }
-      } catch (error) {}
+      } catch (error) {
+        logger.error(`[Memory] 读取 ${dateStr} 摘要失败: ${error}`)
+      }
     }
 
     return messages
@@ -408,6 +413,19 @@ export class Memory {
 
     const line = messagesToStore.map((f) => JSON.stringify(f))
     appendFileSync(memoryFile, line.join('\n') + '\n', 'utf-8')
+
+    // 触发向量记忆批量同步
+    if (vectorMemoryService.isInitialized()) {
+      vectorMemoryService.batchSync(
+        memoryFile,
+        messagesToStore.map((m) => ({
+          id: m.id,
+          type: m.type,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+      )
+    }
   }
 
   setMessageProcessor(processor: MessageProcessor): void {
@@ -431,7 +449,7 @@ export class Memory {
 
     // 从最近14天的消息中查找
     const checkDate = new Date()
-    for (let day = 0; day <= 14; day++) {
+    for (let day = 0; day <= 30; day++) {
       const dateStr = formatDate(checkDate)
       const dayDir = join(this.workspaceRoot, 'memory', dateStr)
       const dayMemoryFile = join(dayDir, 'memory.jsonl')
@@ -443,6 +461,7 @@ export class Memory {
           for (const msg of dayMessages) {
             // 开始收集
             if (msg.id === startId) {
+              logger.debug(`[Memory] 开始收集消息 ${msg.id}`)
               collecting = true
             }
 
@@ -453,6 +472,8 @@ export class Memory {
 
             // 到达结束ID，停止收集
             if (msg.id === endId) {
+              logger.debug(`[Memory] 到达结束ID ${msg.id}`)
+              collecting = false
               return result
             }
           }
@@ -476,3 +497,6 @@ export class Memory {
 
 export const GLOBAL_MEMORY = new Memory()
 export { jsonMemoryManager }
+
+// 导出向量记忆服务
+export { vectorMemoryService, type VectorMemoryServiceConfig } from './vector-memory-service'

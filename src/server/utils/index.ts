@@ -167,7 +167,7 @@ export {
 export {
   truncateToolResponse,
   maskFileContent,
-  convertToMessages,
+  convertMemoryMessageToBaseMessages as convertToMessages,
   convertBaseMessageToMemoryMessage,
   findToolCallPairs,
   slidingWindowMessages,

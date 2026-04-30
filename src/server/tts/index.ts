@@ -148,15 +148,90 @@ export function resetTTSService(): void {
 
 // 监听 TTS 相关配置变更
 configManager.on('change:TTS_PROVIDER', () => {
-  logger.info('[TTS] TTS_PROVIDER 配置变更，下次调用时将重建服务')
+  logger.info('[TTS] TTS_PROVIDER 配置变更，重置服务')
+  resetTTSService()
 })
 
 configManager.on('change:DOLPHIN_TTS_VOICE_ID', () => {
-  logger.info('[TTS] DOLPHIN_TTS_VOICE_ID 配置变更，下次调用时将重建服务')
+  logger.info('[TTS] DOLPHIN_TTS_VOICE_ID 配置变更，重置服务')
+  resetTTSService()
 })
 
 configManager.on('change:EDGE_TTS_VOICE', () => {
-  logger.info('[TTS] EDGE_TTS_VOICE 配置变更，下次调用时将重建服务')
+  logger.info('[TTS] EDGE_TTS_VOICE 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:DOLPHIN_TTS_TOKEN', () => {
+  logger.info('[TTS] DOLPHIN_TTS_TOKEN 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:DOLPHIN_TTS_SPEED_FAST', () => {
+  logger.info('[TTS] DOLPHIN_TTS_SPEED_FAST 配置变更')
+})
+
+configManager.on('change:DOLPHIN_TTS_SPEED_NORMAL', () => {
+  logger.info('[TTS] DOLPHIN_TTS_SPEED_NORMAL 配置变更')
+})
+
+configManager.on('change:DOLPHIN_TTS_SPEED_SLOW', () => {
+  logger.info('[TTS] DOLPHIN_TTS_SPEED_SLOW 配置变更')
+})
+
+configManager.on('change:DOLPHIN_TTS_HOSTNAME', () => {
+  logger.info('[TTS] DOLPHIN_TTS_HOSTNAME 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:DOLPHIN_TTS_PORT', () => {
+  logger.info('[TTS] DOLPHIN_TTS_PORT 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:DOLPHIN_TTS_PATH', () => {
+  logger.info('[TTS] DOLPHIN_TTS_PATH 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:BAILIAN_TTS_API_KEY', () => {
+  logger.info('[TTS] BAILIAN_TTS_API_KEY 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:BAILIAN_TTS_MODEL', () => {
+  logger.info('[TTS] BAILIAN_TTS_MODEL 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:BAILIAN_TTS_VOICE', () => {
+  logger.info('[TTS] BAILIAN_TTS_VOICE 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:MINIMAX_TTS_API_KEY', () => {
+  logger.info('[TTS] MINIMAX_TTS_API_KEY 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:MINIMAX_TTS_GROUP_ID', () => {
+  logger.info('[TTS] MINIMAX_TTS_GROUP_ID 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:MINIMAX_TTS_MODEL', () => {
+  logger.info('[TTS] MINIMAX_TTS_MODEL 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:MINIMAX_TTS_VOICE', () => {
+  logger.info('[TTS] MINIMAX_TTS_VOICE 配置变更，重置服务')
+  resetTTSService()
+})
+
+configManager.on('change:MINIMAX_TTS_BASE_URL', () => {
+  logger.info('[TTS] MINIMAX_TTS_BASE_URL 配置变更，重置服务')
+  resetTTSService()
 })
 
 export { EdgeTTSService, DolphinTTSService, BailianTTSService, MiniMaxTTSService }

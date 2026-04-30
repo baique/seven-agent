@@ -67,16 +67,22 @@ export const env = envSchema.parse(process.env)
 
 /**
  * 获取 Live2D 模型 URL
- * 开发环境: 返回相对路径，由 vite dev server 提供 /model 代理
- * 打包后: 使用 local:// 协议访问 resources 目录
+ * 如果配置的是 http/https 地址，直接使用
+ * 否则使用本地 HTTP 协议通过 server 的静态文件服务访问
+ * URL 格式: http://localhost:{SOCKET_PORT}/live2d/{modelPath}
  */
 export const getLive2DModelUrl = (): string => {
   const modelPath = env.LIVE2D_MODEL_URL
-  const isPackaged = app?.isPackaged ?? false
-  if (isPackaged) {
-    return `local://${modelPath}`
+
+  // 如果已经是 http/https 地址，直接使用
+  if (modelPath.startsWith('http://') || modelPath.startsWith('https://')) {
+    return modelPath
   }
-  return `/${modelPath}`
+
+  // 移除路径开头的 live2d/ 或 model/
+  const cleanPath = modelPath.replace(/^(live2d|model)\//, '')
+
+  return `http://localhost:${env.SOCKET_PORT}/live2d/${cleanPath}`
 }
 
 /**
@@ -105,14 +111,17 @@ export interface Live2DModelConfig {
 
 /**
  * 解析 Live2D 资源路径
+ * 从工作空间的 live2d 目录读取
  */
 const resolveLive2DResourcePath = (relativePath: string | undefined): string | null => {
   if (!relativePath) return null
   if (path.isAbsolute(relativePath)) return relativePath
 
-  const isPackaged = app?.isPackaged ?? false
-  const basePath = isPackaged ? RES_ROOT : path.join(RES_ROOT, 'resources')
-  return path.join(basePath, relativePath)
+  // 从工作空间的 live2d 目录读取
+  const workspacePath = process.env.WORKSPACE || process.cwd()
+  // 移除路径开头的 live2d/ 或 model/，因为工作空间路径已经包含 live2d/
+  const cleanPath = relativePath.replace(/^(live2d|model)\//, '')
+  return path.join(workspacePath, 'live2d', cleanPath)
 }
 
 /**

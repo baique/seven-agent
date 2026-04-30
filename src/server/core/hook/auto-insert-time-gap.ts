@@ -43,9 +43,6 @@ export default function AutoInsertTimeGap(state: typeof MessagesState.State): vo
 
   logger.info(`[AutoInsertTimeGap] 距离上次记录时间间隔 ${timeDiffStr}，插入时间提示消息`)
 
-  state.messages.push(
-    new AIMessage(
-      `[这是系统通知，在做出下一次回复前请考虑时差]用户上次和我对话是 ${lastTimeStr}，距今相差 ${timeDiffStr}`,
-    ),
-  )
+  const latestMessage = state.messages.at(-1) as AIMessage
+  latestMessage.content = `[system]\n上次对话是 ${lastTimeStr}，距今 ${timeDiffStr}\n[system]\n${latestMessage.content}`
 }

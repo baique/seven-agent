@@ -14,7 +14,10 @@ const isDebugMode = process.argv.includes('/debug')
 /**
  * 日志文件配置
  */
-const LOG_DIR = path.join(process.cwd(), 'log')
+const LOG_DIR = (() => {
+  const workspacePath = process.env.WORKSPACE || process.cwd()
+  return path.join(workspacePath, 'log')
+})()
 const MAX_DAYS = 7
 
 /**
@@ -97,12 +100,14 @@ function cleanupOldLogs(): void {
 initLogDir()
 cleanupOldLogs()
 
+// 全局日志级别，支持动态修改
+let currentLogLevel = getBaseLogLevel()
+
 /**
  * 创建 pino 日志实例
  * 支持控制台美化输出 + 按天分文件存储
  */
 function createLogger() {
-  const level = getBaseLogLevel()
   const isDev = process.env.NODE_ENV !== 'production'
 
   // 获取当天的日志文件路径
@@ -115,8 +120,21 @@ function createLogger() {
   })
 
   const loggerConfig: pino.LoggerOptions = {
-    level,
+    level: currentLogLevel,
     base: null, // 简化日志格式
+    serializers: {
+      error: (e: unknown) => {
+        if (e instanceof Error) {
+          return {
+            message: e.message,
+            stack: e.stack,
+            name: e.name,
+            ...(e as Record<string, unknown>),
+          }
+        }
+        return e
+      },
+    },
   }
 
   if (isDev) {
@@ -132,8 +150,8 @@ function createLogger() {
     return pino(
       loggerConfig,
       pino.multistream([
-        { stream: prettyStream, level },
-        { stream: fileDest, level },
+        { stream: prettyStream, level: 'trace' },
+        { stream: fileDest, level: 'trace' },
       ]),
     )
   } else {
@@ -142,14 +160,51 @@ function createLogger() {
   }
 }
 
-export const logger = createLogger()
+// 创建 logger 实例
+let loggerInstance = createLogger()
+
+/**
+ * 重新创建 logger 实例（用于配置变更后）
+ * 每次都重新读取环境变量，确保命令行参数生效
+ */
+function recreateLogger(): void {
+  const newLevel = getBaseLogLevel()
+  if (newLevel !== currentLogLevel) {
+    currentLogLevel = newLevel
+    loggerInstance = createLogger()
+  }
+}
+
+/**
+ * 代理对象，支持动态级别调整
+ */
+export const logger = new Proxy({} as pino.Logger, {
+  get(target, prop) {
+    // 每次访问时检查是否需要重新创建 logger
+    recreateLogger()
+    return (loggerInstance as Record<string, unknown>)[prop as string]
+  },
+})
+
+/**
+ * 同步日志级别与环境变量
+ * 在配置加载完成后调用，确保 LOG_LEVEL 环境变量生效
+ */
+export function syncLogLevelWithEnv(): void {
+  const envLevel = process.env.LOG_LEVEL
+  if (envLevel && envLevel !== currentLogLevel) {
+    currentLogLevel = envLevel
+    loggerInstance = createLogger()
+  }
+}
 
 /**
  * 设置全局日志级别
  * @param level 日志级别
  */
 export function setLogLevel(level: string): void {
-  logger.level = level
+  currentLogLevel = level
+  loggerInstance = createLogger()
 }
 
 /**
@@ -203,7 +258,7 @@ export function reloadModuleLogLevels(): void {
  * @returns 是否为调试模式
  */
 export function isDebug(): boolean {
-  return logger.level === 'debug'
+  return currentLogLevel === 'debug'
 }
 
 /**
@@ -216,7 +271,7 @@ export function triggerLogCleanup(): void {
 /**
  * 获取日志目录路径
  */
-export function getLogDir(): string {
+export function getLogDirectory(): string {
   return LOG_DIR
 }
 
@@ -228,7 +283,7 @@ export function getLogDir(): string {
  */
 export function isLevelEnabled(moduleName: string, level: string): boolean {
   const moduleLevel = moduleLogLevels.get(moduleName.toLowerCase())
-  const effectiveLevel = moduleLevel || logger.level
+  const effectiveLevel = moduleLevel || currentLogLevel
 
   const levels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal']
   const targetIndex = levels.indexOf(level)
