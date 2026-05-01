@@ -41,10 +41,6 @@ const parsedToolInfo = computed(() => {
 
   return { serverName: null, toolName: toolName, fullName: toolName }
 })
-
-onMounted(() => {
-  console.log(props.toolCall)
-})
 </script>
 
 <template>

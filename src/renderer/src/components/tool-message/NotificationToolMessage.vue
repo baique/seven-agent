@@ -62,8 +62,8 @@ const handleReopen = () => {
       <button
         v-if="popupId"
         class="tool-action-btn"
-        @click.stop="handleReopen"
         title="重新打开弹窗"
+        @click.stop="handleReopen"
       >
         打开
       </button>

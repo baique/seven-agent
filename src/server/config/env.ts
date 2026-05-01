@@ -184,6 +184,8 @@ const envSchema = z.object({
   SESSION_NOTES_RETRY_COUNT: z.coerce.number().default(5),
   /** 系统级MCP配置文件路径，默认 ~/.agent/mcp.json */
   MCP_SYSTEM_CONFIG_PATH: z.string().optional(),
+  /** 截图上传服务基础URL（如 http://124.220.222.192:9874），不配置则不启用截图工具 */
+  SCREENSHOT_BASE_URL: z.string().optional(),
 })
 
 /**

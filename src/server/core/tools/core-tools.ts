@@ -14,6 +14,7 @@ import { reminderTools } from './reminder-tool'
 import { subAgentTools } from '../agents/subagent-tool'
 import { extManagementTools } from './ext-tools'
 import { screenshotTool } from './screenshot'
+import { env } from '../../config/env'
 
 export { fileSystemTools, pythonREPLTool }
 export { getSystemInfoTool, getCurrentTimeTool, getClipboardTool, setClipboardTool }
@@ -30,26 +31,36 @@ export { screenshotTool }
  * 核心工具 - 主 Agent 常驻上下文
  * 包含最基础、最常用的工具
  */
-export const coreTools: DynamicStructuredTool[] = [
-  updateMoodValuesTool,
-  updateMemoryTool,
-  ...taskTools,
-  openWindowTool,
-  ...reminderTools,
-  searchMemoryTool,
-  ...memoryDeepSearchTools,
-  ...fileSystemTools,
-  terminalTool,
-  screenshotTool,
-  getSystemInfoTool,
-  getCurrentTimeTool,
-  getClipboardTool,
-  setClipboardTool,
-  ...subAgentTools,
-  ...extManagementTools,
-  pythonREPLTool,
-  ...skillsTools,
-]
+const buildCoreTools = (): DynamicStructuredTool[] => {
+  const tools: DynamicStructuredTool[] = [
+    updateMoodValuesTool,
+    updateMemoryTool,
+    ...taskTools,
+    openWindowTool,
+    ...reminderTools,
+    searchMemoryTool,
+    ...memoryDeepSearchTools,
+    ...fileSystemTools,
+    terminalTool,
+    getSystemInfoTool,
+    getCurrentTimeTool,
+    getClipboardTool,
+    setClipboardTool,
+    ...subAgentTools,
+    ...extManagementTools,
+    pythonREPLTool,
+    ...skillsTools,
+  ]
+
+  // 仅当配置了 SCREENSHOT_BASE_URL 时才注册截图工具
+  if (env.SCREENSHOT_BASE_URL) {
+    tools.push(screenshotTool)
+  }
+
+  return tools
+}
+
+export const coreTools: DynamicStructuredTool[] = buildCoreTools()
 
 /**
  * 核心工具名称映射表（用于快速查找）

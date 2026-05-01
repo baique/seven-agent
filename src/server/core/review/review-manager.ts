@@ -43,7 +43,7 @@ export class ReviewManager {
   private mode: ToolMode = 'manual'
   private pendingReviews: Map<string, ReviewRequest> = new Map()
   private reviewDataMap: Map<string, ToolReviewData> = new Map()
-  private readonly defaultTimeout = 30000
+  private readonly defaultTimeout = 3600000  // 1小时
 
   constructor() {
     // 不再注册IPC处理器，改为通过Socket通信

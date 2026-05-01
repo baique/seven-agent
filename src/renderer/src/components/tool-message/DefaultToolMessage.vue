@@ -54,7 +54,7 @@ const hasArgs = computed(() => {
 
 <template>
   <div class="tool-call" :class="[isExpanded ? 'expanded' : '', isLoading ? 'loading' : '']">
-    <div class="tool-header" @click="toggleExpand" :class="{ 'cursor-pointer': !isLoading }">
+    <div class="tool-header" :class="{ 'cursor-pointer': !isLoading }" @click="toggleExpand">
       <!-- loading 状态显示旋转动画 -->
       <template v-if="isLoading">
         <svg class="tool-icon loading-icon" viewBox="0 0 24 24">
@@ -87,12 +87,12 @@ const hasArgs = computed(() => {
         <path d="M6 9l6 6 6-6" />
       </svg>
     </div>
-    <div class="tool-body" v-if="isExpanded">
-      <div class="tool-section" v-if="hasArgs">
+    <div v-if="isExpanded" class="tool-body">
+      <div v-if="hasArgs" class="tool-section">
         <div class="tool-section-title">参数</div>
         <pre class="tool-params">{{ JSON.stringify(toolCall.args, null, 2) }}</pre>
       </div>
-      <div class="tool-section" v-if="toolCall.result && !isLoading">
+      <div v-if="toolCall.result && !isLoading" class="tool-section">
         <div class="tool-section-title">结果</div>
         <pre class="tool-result">{{
           typeof toolCall.result === 'string'

@@ -3,7 +3,11 @@ import { z } from 'zod'
 import { logger } from '../../utils/logger'
 import { nanoid } from 'nanoid'
 import { getHybridServer } from '../../socket'
+import { env } from '../../config/env'
 import type { WebSocket } from 'ws'
+import fs from 'fs'
+import path from 'path'
+import { tmpdir } from 'os'
 
 const screenshotSchema = z.object({
   displayId: z.number().optional().describe('指定截图的显示器ID，不传则截取主屏幕'),
@@ -64,9 +68,10 @@ function requestScreenshot(
 
     socket.on('message', handler)
 
+    // 使用 command 字段而不是 type 字段，以符合 SocketServer 的消息格式
     socket.send(
       JSON.stringify({
-        type: 'screenshot:request',
+        command: 'screenshot:request',
         requestId,
         data: { displayId },
         timestamp: Date.now(),
@@ -89,7 +94,7 @@ export const screenshotTool = new DynamicStructuredTool({
 - quality: JPEG质量 30-100，默认75
 
 **返回格式：**
-返回 OpenAI 标准格式的图片消息（image_url 类型），可直接展示给用户。`,
+返回文本描述，包含截图尺寸、格式和访问链接，LLM 应根据描述向用户说明屏幕状态。`,
   schema: screenshotSchema,
   func: async ({ displayId, format, quality }) => {
     logger.info(
@@ -104,19 +109,59 @@ export const screenshotTool = new DynamicStructuredTool({
 
       const result = await requestScreenshot(socket, displayId)
 
-      const mimeType = format === 'png' ? 'image/png' : 'image/jpeg'
-      const imageUrl = `data:${mimeType};base64,${result.base64}`
+      const baseUrl = env.SCREENSHOT_BASE_URL
+      if (!baseUrl) {
+        return '截图失败：未配置 SCREENSHOT_BASE_URL'
+      }
 
-      logger.info(
-        `[screenshot] 截图成功: ${result.width}x${result.height}, base64长度=${result.base64.length}`,
-      )
+      // 将 base64 写入临时文件
+      const ext = format === 'png' ? 'png' : 'jpg'
+      const tmpFile = path.join(tmpdir(), `screenshot-${nanoid(12)}.${ext}`)
+      fs.writeFileSync(tmpFile, Buffer.from(result.base64, 'base64'))
 
-      // 返回 OpenAI 标准 image_url 格式，不经过 ToolResult 包装
+      // 上传到云服务器
+      const uploadUrl = `${baseUrl.replace(/\/+$/, '')}/upload`
+      const fileBuffer = fs.readFileSync(tmpFile)
+      const boundary = `----FormBoundary${nanoid(16)}`
+      const filename = path.basename(tmpFile)
+      const mimeType = ext === 'jpg' ? 'image/jpeg' : 'image/png'
+
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
+        ),
+        fileBuffer,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ])
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body,
+      })
+      const uploadJson = (await uploadRes.json()) as {
+        filename?: string
+        url?: string
+        error?: string
+      }
+
+      // 清理临时文件
+      fs.unlink(tmpFile, () => {})
+
+      if (!uploadRes.ok || uploadJson.error) {
+        logger.error(`[screenshot] 上传失败: ${uploadJson.error || uploadRes.status}`)
+        return `截图上传失败：${uploadJson.error || `HTTP ${uploadRes.status}`}`
+      }
+
+      const publicUrl = `${baseUrl.replace(/\/+$/, '')}/files/${uploadJson.filename}`
+      logger.info(`[screenshot] 截图成功: ${result.width}x${result.height}, 上传至 ${publicUrl}`)
+
+      // 返回 OpenAI 标准的多模态格式
       return [
         {
           type: 'image_url',
           image_url: {
-            url: imageUrl,
+            url: publicUrl,
           },
         },
       ]

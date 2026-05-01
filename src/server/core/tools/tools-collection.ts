@@ -59,13 +59,35 @@ export type { ToolInfo } from './tool-register'
 export async function initializeMCPConfig(): Promise<void> {
   mcpConfigManager.startWatching()
 
-  // 监听配置变化，清除工具缓存
-  mcpConfigManager.on('change', () => {
-    import('../../utils/logger').then(({ logger }) => {
-      logger.info('[Tools] 检测到 MCP 配置变化，清除工具缓存')
-    })
+  // 监听配置变化，智能刷新工具缓存
+  mcpConfigManager.on('change', async () => {
+    const { logger } = await import('../../utils/logger')
+    logger.info('[Tools] 检测到 MCP 配置变化，清除工具缓存')
+
     mcpToolManager.clearCache()
     toolRegister.clearMCPCache()
+
+    // 智能刷新：只对没有缓存的新服务器自动连接获取工具列表
+    const servers = getMCPServers()
+    for (const serverConfig of servers) {
+      if (!mcpToolCacheManager.hasCache(serverConfig.name)) {
+        logger.info(`[MCP] 检测到新服务器 ${serverConfig.name}，自动连接获取工具列表...`)
+        try {
+          const result = await mcpToolCacheManager.refreshCache(serverConfig.name)
+          if (result.success) {
+            logger.info(
+              `[MCP] ${serverConfig.name} 缓存创建成功，共 ${result.tools?.length || 0} 个工具`,
+            )
+          } else {
+            logger.warn(`[MCP] ${serverConfig.name} 缓存创建失败: ${result.message}`)
+          }
+        } catch (error) {
+          logger.error(
+            `[MCP] ${serverConfig.name} 连接失败: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+    }
   })
 
   const { logger } = await import('../../utils/logger')

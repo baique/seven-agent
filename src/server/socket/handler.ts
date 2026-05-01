@@ -34,6 +34,9 @@ export class SocketHandler {
     return command in this.commandRegistry
   }
 
+  // 这些命令由特定的监听器处理，不需要注册 handler
+  private passthroughCommands = new Set(['screenshot:result'])
+
   async handle<T = unknown>(
     request: SocketRequest<T>,
     socket?: WebSocket,
@@ -43,6 +46,10 @@ export class SocketHandler {
     const handler = this.commandRegistry[command]
 
     if (!handler) {
+      // 对于 passthrough 命令，不返回错误，让其他监听器处理
+      if (this.passthroughCommands.has(command)) {
+        return null
+      }
       return ResponseBuilder.error(`Unknown command: ${command}`, 404, requestId)
     }
 
