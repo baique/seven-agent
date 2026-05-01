@@ -37,7 +37,9 @@ export const extSearchTool = new DynamicStructuredTool({
 - ext_search({"query": "github webhook"}) → 返回包含"github"或"webhook"的工具
 - ext_search({"query": ""}) → 返回所有可用工具（同ext_list）`,
   schema: z.object({
-    query: z.string().describe('搜索关键词，支持空格分隔多个关键词（OR逻辑），为空则返回所有扩展工具'),
+    query: z
+      .string()
+      .describe('搜索关键词，支持空格分隔多个关键词（OR逻辑），为空则返回所有扩展工具'),
   }),
   func: async (input) => {
     const toolName = 'ext_search'
@@ -58,8 +60,7 @@ export const extSearchTool = new DynamicStructuredTool({
               const nameLower = t.name.toLowerCase()
               const descLower = (t.description || '').toLowerCase()
               return keywords.some(
-                (keyword) =>
-                  nameLower.includes(keyword) || descLower.includes(keyword),
+                (keyword) => nameLower.includes(keyword) || descLower.includes(keyword),
               )
             })
           : tools
@@ -307,10 +308,10 @@ export const extInvokeTool = new DynamicStructuredTool({
  */
 export const extHelpTool = new DynamicStructuredTool({
   name: 'ext_help',
-  description: `获取工具的详细schema信息，包括参数结构、必填字段、描述等。
+  description: `获取工具的使用帮助
 
 **使用场景：**
-- 需要了解某个工具的具体参数格式
+- 了解某个工具如何调用
 - 查看工具的完整描述和使用说明
 - 确认参数类型和必填项
 
