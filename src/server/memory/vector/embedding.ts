@@ -4,17 +4,71 @@
  * 设计原则：优先本地，自动降级，可配置
  */
 
+import { pipeline, env as transformersEnv } from '@xenova/transformers'
+import { ProxyAgent, setGlobalDispatcher } from 'undici'
 import type { EmbeddingProvider } from './types'
+import { logger } from '../../utils/logger'
+
+transformersEnv.allowLocalModels = true
+transformersEnv.useBrowserCache = false
+transformersEnv.remoteHost = 'https://huggingface.co'
+console.log(`[EmbeddingProvider] remoteHost: ${transformersEnv.remoteHost}`)
+
+const proxyUrl =
+  process.env.HTTPS_PROXY ||
+  process.env.https_proxy ||
+  process.env.HTTP_PROXY ||
+  process.env.http_proxy
+
+if (proxyUrl) {
+  setGlobalDispatcher(new ProxyAgent(proxyUrl))
+  console.log(`[EmbeddingProvider] 已启用全局代理: ${proxyUrl}`)
+} else {
+  console.log('[EmbeddingProvider] 未配置代理，使用直连')
+}
+
+const modelDownloadLogger = (progress: {
+  status: string
+  progress?: number
+  file?: string
+  msg?: string
+}) => {
+  switch (progress.status) {
+    case 'initiate':
+      console.log(`[Embedding下载] 开始下载: ${progress.file}`)
+      break
+    case 'progress':
+      if (progress.progress !== undefined) {
+        const bar =
+          '█'.repeat(Math.floor(progress.progress / 5)) +
+          '░'.repeat(20 - Math.floor(progress.progress / 5))
+        process.stdout.write(
+          `\r[Embedding下载] ${progress.file} ${bar} ${progress.progress.toFixed(1)}%`,
+        )
+      }
+      break
+    case 'done':
+      process.stdout.write('\n')
+      console.log(`[Embedding下载] 完成: ${progress.file}`)
+      break
+    case 'error':
+      process.stdout.write('\n')
+      console.error(`[Embedding下载] 错误: ${progress.file} - ${progress.msg}`)
+      break
+  }
+}
 
 /**
  * 本地嵌入提供者配置
  */
 export interface LocalEmbeddingConfig {
-  /** 模型路径（空则使用默认） */
+  /** 模型名称（HuggingFace repo id） */
+  modelName?: string
+  /** 模型本地路径（优先使用） */
   modelPath?: string
   /** 上下文大小 */
   contextSize?: number
-  /** 向量维度 */
+  /** 向量维度（默认768） */
   dimensions?: number
 }
 
@@ -45,8 +99,8 @@ export interface EmbeddingManagerConfig {
 }
 
 /**
- * 本地嵌入提供者（基于 llama.cpp）
- * 注意：这是一个占位实现，实际需要使用 node-llama-cpp 或其他本地推理库
+ * 本地嵌入提供者（基于 @xenova/transformers）
+ * 使用 HuggingFace 模型生成嵌入向量
  */
 class LocalEmbeddingProvider implements EmbeddingProvider {
   id = 'local'
@@ -54,74 +108,57 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
   dimensions: number
   private config: LocalEmbeddingConfig
   private initialized = false
+  private embedder: Awaited<ReturnType<typeof pipeline<'feature-extraction'>>> | null = null
 
   constructor(config: LocalEmbeddingConfig = {}) {
     this.config = config
-    this.model = config.modelPath || 'nomic-embed-text-v1.5'
-    this.dimensions = config.dimensions || 768
+    this.model = config.modelName || 'Xenova/bge-small-zh-v1.5'
+    this.dimensions = config.dimensions || 512
   }
 
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    // TODO: 实际实现需要使用 node-llama-cpp 或其他本地推理库
-    // 这里提供一个模拟实现用于测试
-    console.log(`[LocalEmbeddingProvider] 初始化本地模型: ${this.model}`)
-    
-    // 模拟加载延迟
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    this.initialized = true
+    const cacheDir = this.config.modelPath || undefined
+    const isLocal = !!cacheDir
+
+    if (isLocal) {
+      console.log(`[LocalEmbeddingProvider] 使用本地模型: ${this.model}, 路径: ${cacheDir}`)
+    } else {
+      console.log(`[LocalEmbeddingProvider] 首次使用，从 HuggingFace 下载模型: ${this.model}`)
+      console.log(`[LocalEmbeddingProvider] 缓存目录: ${cacheDir || '默认缓存目录'}`)
+      console.log(`[LocalEmbeddingProvider] 预计大小 ~1.5GB，请耐心等待...\n`)
+    }
+
+    try {
+      this.embedder = await pipeline('feature-extraction', this.model, {
+        cache_dir: cacheDir,
+        progress_callback: modelDownloadLogger,
+      })
+      this.initialized = true
+      console.log(`[LocalEmbeddingProvider] 模型加载完成，维度: ${this.dimensions}`)
+    } catch (err) {
+      logger.error(err, `[LocalEmbeddingProvider] 模型加载失败: `)
+      throw err
+    }
   }
 
   async embed(text: string): Promise<number[]> {
-    if (!this.initialized) await this.initialize()
+    if (!this.initialized || !this.embedder) await this.initialize()
 
-    // TODO: 实际实现需要调用本地模型
-    // 这里提供一个基于哈希的模拟实现，确保相同文本产生相同向量
-    return this.simulateEmbedding(text)
+    const result = await this.embedder!(text, { pooling: 'mean', normalize: true })
+    return Array.from(result.data as Float32Array)
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    if (!this.initialized) await this.initialize()
+    if (!this.initialized || !this.embedder) await this.initialize()
 
-    // 串行处理，实际实现可以并行
     const results: number[][] = []
     for (const text of texts) {
-      results.push(await this.embed(text))
+      const result = await this.embedder!(text, { pooling: 'mean', normalize: true })
+      results.push(Array.from(result.data as Float32Array))
     }
     return results
-  }
-
-  /**
-   * 模拟嵌入生成（基于文本哈希）
-   * 用于测试阶段，确保相同文本产生相同向量
-   */
-  private simulateEmbedding(text: string): number[] {
-    // 使用简单的哈希算法生成伪随机但确定的向量
-    const vector: number[] = []
-    let seed = this.hashString(text)
-    
-    for (let i = 0; i < this.dimensions; i++) {
-      // 使用线性同余生成器产生伪随机数
-      seed = (seed * 1664525 + 1013904223) % 4294967296
-      const value = (seed / 4294967296) * 2 - 1  // 归一化到 [-1, 1]
-      vector.push(value)
-    }
-    
-    // L2 归一化
-    const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0))
-    return vector.map(v => v / norm)
-  }
-
-  private hashString(str: string): number {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash // 转换为32位整数
-    }
-    return Math.abs(hash)
   }
 }
 
@@ -146,7 +183,7 @@ class OpenAICompatibleProvider implements EmbeddingProvider {
     const response = await fetch(`${this.baseUrl}/embeddings`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
+        Authorization: `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -169,7 +206,7 @@ class OpenAICompatibleProvider implements EmbeddingProvider {
     const response = await fetch(`${this.baseUrl}/embeddings`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
+        Authorization: `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

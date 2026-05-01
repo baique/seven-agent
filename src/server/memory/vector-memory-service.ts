@@ -24,6 +24,7 @@ export interface VectorMemoryServiceConfig {
   embedding?: {
     local?: {
       enabled?: boolean
+      modelName?: string
       modelPath?: string
       dimensions?: number
     }
@@ -127,6 +128,28 @@ class VectorMemoryService {
     } catch (err) {
       logger.error(err, '[VectorMemoryService] 强制同步失败')
       // 不抛出错误，避免影响主流程
+    }
+  }
+
+  /**
+   * catch-up 同步 - 兜底/重试机制
+   * 只处理对话文件：增量 gap 补全 + 失败重试，不碰长期记忆
+   */
+  async catchUpSync(): Promise<void> {
+    if (!this.initialized || !this.syncManager) {
+      logger.debug('[VectorMemoryService] 服务未初始化，跳过 catch-up 同步')
+      return
+    }
+
+    try {
+      const report = await this.syncManager.catchUpSync()
+      if (report.dialogFiles.synced > 0 || report.dialogFiles.failed > 0) {
+        logger.info(
+          `[VectorMemoryService] catch-up 同步: 对话文件${report.dialogFiles.synced}/${report.dialogFiles.total}(+${report.dialogFiles.added}), 失败${report.dialogFiles.failed}, 耗时${report.duration}ms`,
+        )
+      }
+    } catch (err) {
+      logger.error(err, '[VectorMemoryService] catch-up 同步失败')
     }
   }
 

@@ -8,6 +8,8 @@
  */
 
 import fs from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { createInterface } from 'node:readline'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import type { VectorMemoryDB } from './db'
@@ -148,6 +150,62 @@ export class MemorySyncManager {
   }
 
   /**
+   * catch-up 同步 - 兜底/重试机制
+   * 只处理对话文件，不碰长期记忆。专门处理：
+   * - 实时 batchSync 遗漏的消息（增量 gap）
+   * - sync_state 标记为 failed 的文件重试
+   */
+  async catchUpSync(): Promise<SyncReport> {
+    console.log('[Sync] 开始 catch-up 同步（兜底检查）')
+    const startTime = Date.now()
+
+    const report: SyncReport = {
+      timestamp: startTime,
+      duration: 0,
+      memoryFiles: { total: 0, synced: 0, failed: 0, added: 0, updated: 0, deleted: 0 },
+      dialogFiles: { total: 0, synced: 0, failed: 0, added: 0 },
+    }
+
+    try {
+      const dialogFiles = await this.listDialogFiles()
+      report.dialogFiles.total = dialogFiles.length
+
+      for (const file of dialogFiles) {
+        try {
+          const syncState = this.db.getSyncState(file)
+
+          // 如果之前同步失败过，强制重新同步
+          if (syncState?.syncStatus === 'failed') {
+            const result = await this.syncDialogFile(file, { force: true })
+            report.dialogFiles.synced++
+            report.dialogFiles.added += result.added
+            continue
+          }
+
+          // 正常增量：检查是否有新消息
+          const result = await this.syncDialogFile(file)
+          if (result.added > 0) {
+            report.dialogFiles.synced++
+            report.dialogFiles.added += result.added
+          }
+        } catch (err) {
+          console.error(`[Sync] catch-up 同步失败 ${file}: ${err}`)
+          report.dialogFiles.failed++
+        }
+      }
+
+      report.duration = Date.now() - startTime
+      if (report.dialogFiles.added > 0 || report.dialogFiles.failed > 0) {
+        console.log(`[Sync] catch-up 同步完成: ${JSON.stringify(report)}`)
+      }
+      return report
+    } catch (err) {
+      console.error(`[Sync] catch-up 同步失败: ${err}`)
+      throw err
+    }
+  }
+
+  /**
    * 【P1】异步同步 - 记忆变更后调用
    * 特点：非阻塞，失败可重试
    */
@@ -239,6 +297,29 @@ export class MemorySyncManager {
         console.error(`[Sync] 批量同步失败 ${dialogFile}: ${err}`)
       }
     }
+  }
+
+  /**
+   * 流式读取文件中从指定行号开始的内容行
+   * 避免一次性加载整个文件到内存，适合大文件场景
+   */
+  private async readLinesFrom(filePath: string, startLine: number): Promise<string[]> {
+    const lines: string[] = []
+    let currentLine = 0
+
+    const rl = createInterface({
+      input: createReadStream(filePath, { encoding: 'utf-8' }),
+      crlfDelay: Infinity,
+    })
+
+    for await (const line of rl) {
+      if (currentLine >= startLine && line.trim()) {
+        lines.push(line)
+      }
+      currentLine++
+    }
+
+    return lines
   }
 
   /**
@@ -391,6 +472,8 @@ export class MemorySyncManager {
 
   /**
    * 同步对话文件
+   * 增量策略：基于 source_position（行号）追踪，只同步新消息
+   * 大文件优化：使用流式读取，不一次性加载全部内容
    */
   private async syncDialogFile(
     filePath: string,
@@ -412,18 +495,13 @@ export class MemorySyncManager {
 
     const startPosition = (lastSyncResult?.last_pos ?? -1) + 1
 
-    // 2. 读取文件内容
-    const fileContent = await fs.readFile(filePath, 'utf-8')
-    const lines = fileContent.split('\n').filter((line) => line.trim())
-
-    // 3. 只处理新消息
-    const newLines = lines.slice(startPosition)
+    // 2. 流式读取，只加载 startPosition 之后的行
+    const newLines = await this.readLinesFrom(filePath, startPosition)
     if (newLines.length === 0) {
-      // 无新内容不输出日志
       return result
     }
 
-    // 4. 解析新消息
+    // 3. 解析新消息
     const newMessages: DialogMessageJSON[] = []
     for (const line of newLines) {
       try {
@@ -434,10 +512,10 @@ export class MemorySyncManager {
       }
     }
 
-    // 5. 批量生成嵌入
+    // 4. 批量生成嵌入
     const embeddings = await this.embeddingProvider.embedBatch(newMessages.map((m) => m.content))
 
-    // 6. 批量插入
+    // 5. 批量插入
     db.exec('BEGIN TRANSACTION')
 
     try {
@@ -469,14 +547,13 @@ export class MemorySyncManager {
         result.added++
       }
 
-      // 7. 更新同步状态
+      // 6. 更新同步状态（对话文件以 position 追踪为主，不依赖 hash）
       const fileStat = await fs.stat(filePath)
-      const fileHash = crypto.createHash('md5').update(fileContent).digest('hex')
 
       const syncState: SyncStateRecord = {
         sourceFile: filePath,
         sourceType: 'dialog',
-        fileHash,
+        fileHash: null,
         fileSize: fileStat.size,
         fileMtime: fileStat.mtimeMs,
         lastSyncAt: Date.now(),
@@ -546,15 +623,13 @@ export class MemorySyncManager {
         }
       }
 
-      // 更新同步状态
+      // 更新同步状态（对话文件以 position 追踪为主，不依赖 hash）
       const fileStat = await fs.stat(filePath)
-      const fileContent = await fs.readFile(filePath, 'utf-8')
-      const fileHash = crypto.createHash('md5').update(fileContent).digest('hex')
 
       const syncState: SyncStateRecord = {
         sourceFile: filePath,
         sourceType: 'dialog',
-        fileHash,
+        fileHash: null,
         fileSize: fileStat.size,
         fileMtime: fileStat.mtimeMs,
         lastSyncAt: Date.now(),

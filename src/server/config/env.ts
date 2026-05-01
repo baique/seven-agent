@@ -91,6 +91,10 @@ const envSchema = z.object({
 
   /** 摘要模型配置（对应 models 目录下的文件名，不含 .json） */
   SUMMARIZATION_API_MODEL: z.string().optional(),
+  /** 向量模型名称（HuggingFace repo id，默认 bge-small-zh-v1.5） */
+  EMBEDDING_MODEL_NAME: z.string().optional().default('Xenova/bge-small-zh-v1.5'),
+  /** 向量维度（默认 512，匹配 bge-small-zh-v1.5） */
+  EMBEDDING_VECTOR_DIMENSIONS: z.coerce.number().optional().default(512),
 
   /** 工作区路径 */
   WORKSPACE: z.string().min(1),
@@ -284,6 +288,12 @@ export const paths = {
    */
   get CACHE_DIR() {
     return path.join(this.WORKSPACE_ROOT, 'cache')
+  },
+  /**
+   * 模型缓存目录（存放 embedding 等本地模型）
+   */
+  get MODELS_DIR() {
+    return path.join(this.CACHE_DIR, 'models')
   },
   /**
    * TTS 缓存目录

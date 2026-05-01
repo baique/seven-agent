@@ -7,3 +7,4 @@ export {
   startCleanupScheduler,
   stopCleanupScheduler,
 } from './long-term-summary'
+export { startVectorSyncScheduler, stopVectorSyncScheduler, runVectorSync } from './vector-sync'

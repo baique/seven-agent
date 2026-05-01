@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { createHybridServer, isPortInUse } from './socket'
 import { logger, syncLogLevelWithEnv } from './utils/logger'
-import { env, configManager } from './config/env'
+import { env, configManager, paths } from './config/env'
 
 // 同步日志级别与环境变量，确保 LOG_LEVEL 配置生效
 syncLogLevelWithEnv()
@@ -10,6 +10,7 @@ import { initWorkspace } from './utils/workspace'
 import { startLongTermSummaryScheduler } from './scheduler/long-term-summary'
 import { scheduler, startCleanupScheduler } from './scheduler'
 import { startReminderChecker } from './scheduler/reminder-checker'
+import { startVectorSyncScheduler } from './scheduler'
 import { jsonMemoryManager, vectorMemoryService } from './memory'
 import { terminalManagerSingleton } from './terminal'
 import { taskManager } from './core/tools/task/task-manager'
@@ -226,11 +227,13 @@ export async function startServer(): Promise<void> {
   // 初始化向量记忆服务
   try {
     await vectorMemoryService.initialize({
-      vectorDimensions: 768,
+      vectorDimensions: env.EMBEDDING_VECTOR_DIMENSIONS,
       embedding: {
         local: {
           enabled: true,
-          dimensions: 768,
+          modelName: env.EMBEDDING_MODEL_NAME,
+          modelPath: paths.MODELS_DIR,
+          dimensions: env.EMBEDDING_VECTOR_DIMENSIONS,
         },
         remote: {
           enabled: false,
@@ -287,6 +290,7 @@ export async function startServer(): Promise<void> {
   startLongTermSummaryScheduler()
   startReminderChecker()
   startCleanupScheduler()
+  startVectorSyncScheduler()
 
   // 启动配置热重载监听
   configManager.startWatching()
